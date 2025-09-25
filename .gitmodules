@@ -3,4 +3,4 @@
 	url = https://github.com/NikolasSpirouGH/ThesisFrontend.git
 [submodule "backend"]
 	path = backend
-	url = https://github.com/NikolasSpirouGH/CloudAppThesis.git
+	url = https://github.com/NikolasSpirouGH/ThesisBackend.git
