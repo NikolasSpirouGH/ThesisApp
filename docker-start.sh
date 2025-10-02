@@ -35,6 +35,15 @@ if ! command -v mvn &> /dev/null; then
     fi
 fi
 
+# --- Ensure Git submodules are pulled ---
+echo "📦 Initializing and updating Git submodules..."
+git submodule update --init --recursive
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to update Git submodules. Please check your Git configuration."
+    exit 1
+fi
+echo "✅ Submodules are ready."
+
 # --- Ensure mvnw is executable ---
 if [ -f "backend/mvnw" ]; then
     chmod +x backend/mvnw
