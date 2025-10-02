@@ -1,4 +1,3 @@
-
 services:
   # PostgreSQL Database
   postgres:
@@ -79,16 +78,20 @@ services:
       MINIO_BUCKET_PREDICTION_RESULTS: ${MINIO_BUCKET_PREDICTION_RESULTS:-prediction-results}
       MINIO_BUCKET_METRICS: ${MINIO_BUCKET_METRICS:-metrics}
       MINIO_BUCKET_PARAMETERS: ${MINIO_BUCKET_PARAMETERS:-parameters}
-      MAIL_HOST: mailhog
-      MAIL_PORT: 1025
-      MAIL_USERNAME: ""
-      MAIL_PASSWORD: ""
+      MAIL_HOST: ${MAIL_HOST:-mailhog}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      SHARED_VOLUME: /app/shared
+      RUNNING_IN_DOCKER: true
     ports:
       - "8080:8080"
     volumes:
-      - ./backend:/app
+      - ./backend/src:/app/src
+      - ./backend/pom.xml:/app/pom.xml
       - ~/.m2:/root/.m2
       - /var/run/docker.sock:/var/run/docker.sock
+      - shared_volume:/app/shared
     networks:
       - thesis_network
     depends_on:
@@ -100,10 +103,10 @@ services:
         condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
 
   # Frontend Vite Application
   frontend:
@@ -113,12 +116,14 @@ services:
     container_name: thesis_frontend
     restart: unless-stopped
     environment:
-      VITE_API_URL: http://backend:8080
+      VITE_API_URL: ${VITE_API_URL:-http://backend:8080}
     ports:
       - "5173:5173"
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
     networks:
       - thesis_network
     depends_on:
@@ -136,3 +141,5 @@ volumes:
     driver: local
   minio_data:
     driver: local
+  shared_volume:  # ← ADD THIS
+      driver: local
