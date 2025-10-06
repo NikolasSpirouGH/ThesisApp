@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: thesisapp
+data:
+  postgres-db: "thesis_db"
+
+  # Application settings
+  app.name: "ThesisApp ML Platform"
+  app.environment: "production"
+
+  # Logging
+  log.level: "INFO"
