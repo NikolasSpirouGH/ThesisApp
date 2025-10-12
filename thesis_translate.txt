@@ -1,0 +1,194 @@
+Title:
+
+A cloud application for creating and executing machine learning models
+
+Summary:
+
+Development of a modern, containerized web application that allows the creation and execution of machine learning models. Model creation is achieved through training ML algorithms on datasets provided by the user. These algorithms can either be predefined by the application or uploaded by the user.
+
+The application enables full management of ML models, including creation, modification, search/display, and deletion. Searches can be performed by various criteria (e.g., functional category, creation/publication date). Modification and deletion are restricted to the model’s owner.
+
+Execution of models is allowed to the owner and, for public models, to other users. Execution involves providing an input dataset by the requester. All these operations are accessible only to registered users. Additionally, an administrator role must exist for user management.
+
+The application must be scalable and maintain high performance even under multiple concurrent users.
+
+Requirements
+Functional Requirements
+User Management
+
+User Registration:
+Users can register by providing full name, email, password (twice), age, profession, and country of residence. The first three fields are mandatory. Passwords must follow a strong format (letters, digits, special characters, and >8 characters). Registration completes if validation passes.
+
+User Authentication:
+Login with username and password. If valid, a short-lived token is issued to access protected functions.
+
+Modify User Details:
+Users (or admins) can modify profile details except for the password.
+
+Change Password:
+Only the user can change their password, by providing the old one and entering the new one twice. The change occurs if the old password is correct and the new entries match.
+
+Password Reset:
+Users may request a reset when they forget their password. The system emails a reset link and a new, encrypted password (based e.g. on username or public key).
+
+Delete User:
+Users can delete their account after confirmation. Admins can also delete users (e.g., for abuse).
+
+Training Management
+
+Train ML Algorithm:
+Users can train an algorithm using a dataset (e.g., CSV or Excel). The dataset may include a header row, which users specify. By default, all columns except the last are features; the last is the prediction target, unless specified otherwise.
+Training is asynchronous: once started, a training ID is returned, which can be used to check its status (created, started, completed, failed).
+
+Users can provide custom hyperparameters; otherwise, defaults are used.
+
+The system records the start date/time of training.
+
+Optionally, distributed training should be supported for large datasets.
+
+Training Status:
+Users can query the status (pending, running, completed, failed). Details like logs and completion date are included.
+
+Download Trained Model:
+Users can download the resulting model once training is successful.
+
+List Trainings:
+Users can list and filter their trainings (e.g., by date range or algorithm).
+
+Stop Training:
+Users can explicitly stop training by ID.
+
+Delete Training:
+Users can delete a training and its results.
+
+Retrain Algorithm:
+Users can retrain based on an existing training configuration (creating a new training instance).
+
+Machine Learning Model Management
+
+Create Model:
+From successful training, users can register a model with metadata (name, category, keywords, description, dataset info, public/private flag).
+The system automatically records model and training IDs and timestamps.
+
+Category Management:
+Hierarchical categorization of models is supported. Authenticated users can propose category changes (create, modify, delete); admins approve or reject them.
+Each category has a name, optional description, and may have parent categories. Deleting categories follows specific rules if they’re linked to models.
+
+Modify Model:
+Owners can change metadata or re-link a model to a newer training.
+
+Delete Model:
+Owners can delete models, though the underlying training results remain unless the training itself is deleted.
+
+Execute Model:
+Owners (or any user for public models) can execute models on new datasets with the same structure as the training data.
+Results (predictions) are displayed and downloadable.
+Execution may also be asynchronous.
+Execution management includes:
+
+Re-run model execution
+
+Delete execution
+
+Search executions by date
+
+View execution metadata (model used, date, status, results)
+
+View Model:
+Display full metadata (and content if the user is the owner).
+
+Search Models:
+Simple search (keywords) and advanced search (field-based, AND/OR logic, date ranges, categories).
+Private models appear only to their owners.
+
+Machine Learning Algorithm Management
+
+The system supports both predefined and user-defined algorithms.
+
+Import Algorithm:
+Users can upload custom algorithms with metadata (name, description, version, keywords, access type, configuration parameters).
+Algorithms are preferably packaged as Docker images.
+
+Training uses the /data mount point for dataset input and /model for output results.
+
+Docker ensures isolation and security.
+
+A unique algorithm ID and upload timestamp are generated.
+
+Modify Algorithm:
+Owners can edit metadata or upload new versions.
+
+Delete Algorithm:
+Owners can delete algorithms. Deleting one should also delete associated trainings and models.
+
+View Algorithm:
+Users can view metadata.
+
+Search Algorithm:
+Supports simple and advanced searches. Private algorithms are visible and usable only by their owners.
+
+Non-Functional Requirements
+
+All operations (except training and execution) must execute quickly.
+
+Model execution must be significantly faster than training.
+
+Support at least 20 concurrent users.
+
+The UI must be responsive across devices, with consistent look and feel.
+
+Clear separation between backend (REST API, Level 3 maturity) and frontend.
+
+Containerized deployment with Kubernetes compatibility.
+
+Robust error handling with meaningful messages and visualization.
+
+Validation on both client and server sides.
+
+TLS and CSRF/SSRF/XSS/SQL Injection protection.
+
+Secure password hashing.
+
+Report Structure
+
+Abstract: 1–2 paragraphs summarizing the contribution and benefits.
+
+Introduction: Describe the problem, the proposed solution, features, advantages, and chapter overview.
+
+Background:
+
+Machine learning: definition, categories, algorithms.
+
+Cloud computing: concepts, models, technologies (Docker, Kubernetes).
+
+Related Work:
+
+Summaries and comparisons of similar systems (2 paragraphs per work).
+
+Comparison table with key advantages of the proposed system.
+
+Application Development:
+
+Requirements (copied from specs).
+
+Design (context, component, use-case, sequence, ER diagrams).
+
+Implementation (language, frameworks, code structure, tools, tests).
+
+Requirements satisfaction table with explanations.
+
+Demonstration & Evaluation:
+
+Installation and execution instructions.
+
+Usage scenarios with screenshots.
+
+Performance and scalability experiments.
+
+Conclusions:
+
+Summary of contributions and benefits.
+
+Lessons learned.
+
+Future work and improvement directions.

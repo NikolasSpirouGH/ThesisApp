@@ -55,6 +55,7 @@ services:
 
   # Backend Spring Boot Application
   backend:
+    user: "${UID:-1000}:${GID:-1000}"
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -89,7 +90,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./backend/pom.xml:/app/pom.xml
-      - ~/.m2:/root/.m2
+      - ~/.m2:/.m2
       - /var/run/docker.sock:/var/run/docker.sock
       - shared_volume:/app/shared
     networks:
@@ -110,6 +111,7 @@ services:
 
   # Frontend Vite Application
   frontend:
+    user: "${UID:-1000}:${GID:-1000}"
     build:
       context: ./frontend
       dockerfile: Dockerfile

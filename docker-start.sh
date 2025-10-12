@@ -57,6 +57,11 @@ if [ ! -f .env ]; then
     echo "✅ Please review and modify .env file if needed"
 fi
 
+# --- Export UID/GID for Docker user mapping ---
+export UID=$(id -u)
+export GID=$(id -g)
+echo "🔑 Running containers as UID:GID = $UID:$GID"
+
 # --- Stop existing containers ---
 echo "🛑 Stopping existing containers..."
 $DOCKER_COMPOSE_CMD down
