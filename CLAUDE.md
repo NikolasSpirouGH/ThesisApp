@@ -2,290 +2,330 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Overview
+## Project Overview
 
-ThesisApp is a cloud-based machine learning platform that allows users to train and execute ML models. The application consists of a Spring Boot backend (Java 21) and a Vite/TypeScript frontend, orchestrated via Docker Compose with supporting services (PostgreSQL, MinIO, MailHog).
-
-## Development Commands
-
-### Running the Application
-
-**Quick Start (Recommended):**
-```bash
-./docker-start.sh
-```
-This script handles Git submodules, Maven wrapper permissions, environment setup, and starts all services.
-
-**Manual Docker Compose:**
-```bash
-# Start all services
-docker compose up --build -d
-
-# View logs
-docker compose logs -f
-
-# Stop services
-docker compose down
-```
-
-**Access Points:**
-- Backend API: http://localhost:8080
-- Frontend: http://localhost:5173
-- MinIO Console: http://localhost:9001
-- MailHog (Email Testing): http://localhost:8025
-- Swagger UI: http://localhost:8080/swagger-ui.html
-
-### Backend (Spring Boot)
-
-**Build:**
-```bash
-cd backend
-./mvnw clean package
-```
-
-**Run Tests:**
-```bash
-cd backend
-./mvnw test
-```
-
-**Run Specific Test:**
-```bash
-cd backend
-./mvnw test -Dtest=ClassName#methodName
-```
-
-**Run Integration Tests:**
-```bash
-cd backend
-./mvnw verify -P integration-tests
-```
-
-### Frontend (Vite + TypeScript)
-
-**Development:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-**Build:**
-```bash
-cd frontend
-npm run build
-```
-
-**Preview Production Build:**
-```bash
-cd frontend
-npm run preview
-```
+ThesisApp is a cloud-based machine learning platform that allows users to upload datasets, train ML models (both predefined Weka algorithms and custom Docker-based algorithms), and execute predictions. The application consists of a Spring Boot backend (Java 21), TypeScript frontend (Vite), and uses PostgreSQL for data, MinIO for object storage, and MailHog for email testing.
 
 ## Architecture
 
-### Backend Structure
+### Backend (Spring Boot 3.4.2, Java 21)
+- **Main Entry**: `backend/src/main/java/com/cloud_ml_app_thesis/CloudMlAppThesis.java`
+- **Package**: `com.cloud_ml_app_thesis`
+- **Authentication**: JWT-based with RSA key signing (keys in `backend/src/main/resources/keys/`)
+- **Database**: PostgreSQL with Flyway migrations (`backend/src/main/resources/db/migration/`)
+- **Object Storage**: MinIO for datasets, algorithms, models, predictions, metrics, and parameters
+- **ML Training**:
+  - **Weka Algorithms**: Built-in support for predefined ML algorithms via Weka library
+  - **Custom Algorithms**: User-provided Docker images that train models (uses Docker-in-Docker via `/var/run/docker.sock`)
+- **Docker Integration**: Backend spawns Docker containers for custom ML training via `DockerContainerRunner` utility
+- **Async Tasks**: Training and prediction operations are asynchronous, tracked via `AsyncTaskStatus` entity
+- **Shared Volume**: Training containers use a shared volume (`/app/shared` in Docker) for data exchange between host and containers
 
-The backend follows a layered architecture pattern:
+### Frontend (TypeScript + Vite)
+- **Framework**: Vanilla TypeScript with Vite for bundling
+- **Structure**: Feature-based organization under `frontend/src/features/`
+  - `auth/` - Login, registration, password reset
+  - `datasets/` - Dataset upload, configuration, sharing
+  - `algorithms/` - Custom algorithm management
+  - `trainings/` - Training workflows (Weka and custom)
+  - `executions/` - Prediction execution
+  - `models/` - Trained model management
+  - `results/` - Training/prediction results
+  - `categories/` - Category management
+  - `tasks/` - Task status monitoring
+- **Routing**: Custom router in `frontend/src/app/router.ts`
+- **API Client**: Centralized HTTP client in `frontend/src/core/http.ts`
 
-```
-backend/src/main/java/com/cloud_ml_app_thesis/
-├── controller/          # REST API endpoints
-├── service/            # Business logic
-├── repository/         # Data access layer
-├── entity/             # JPA entities
-├── dto/                # Data transfer objects
-├── config/             # Spring configuration (including security)
-├── util/               # Utility classes
-├── validation/         # Custom validators
-├── enumeration/        # Enums (status, action, accessibility)
-├── exception/          # Custom exceptions
-├── helper/             # Helper classes
-└── specification/      # JPA specifications for dynamic queries
-```
+### Key Services (Backend)
 
-**Key Packages:**
-- `controller/` - RESTful endpoints for datasets, algorithms, models, training, and execution
-- `service/` - Core services including `CustomTrainingService`, `CustomPredictionService`, `MinioService`, `DatasetService`
-- `util/` - Contains `DockerContainerRunner` for ML workload orchestration
+- **CustomTrainingService**: Orchestrates custom algorithm training via Docker containers
+- **CustomPredictionService**: Executes predictions using custom trained models
+- **TrainService**: Handles Weka-based ML training
+- **ModelExecutionService**: Manages model execution workflows
+- **MinioService**: All object storage operations (upload/download from MinIO)
+- **DatasetService**: Dataset CRUD and configuration
+- **AlgorithmService**: Algorithm management (predefined and custom)
+- **ModelService**: Model persistence and retrieval
+- **TaskStatusService**: Async task tracking and status updates
+- **UserService**: User management and authentication
 
-### Frontend Structure
+### Docker-in-Docker Pattern
 
-```
-frontend/src/
-├── app/                # Main app setup
-├── core/               # Core functionality (routing, API)
-├── features/           # Feature modules
-│   ├── auth/
-│   ├── datasets/
-│   ├── algorithms/
-│   ├── models/
-│   ├── trainings/
-│   ├── executions/
-│   ├── results/
-│   └── tasks/
-└── shared/             # Shared components and utilities
-```
+The backend runs in Docker and spawns Docker containers for custom ML training:
+1. Backend downloads dataset and user's Docker image from MinIO
+2. Backend creates temp directories in shared volume (`/app/shared/training-ds-*`, `/app/shared/training-out-*`)
+3. Backend runs user's Docker image with mounted volumes: `/data` (input) and `/model` (output)
+4. Container trains model, writes model file and `metrics.json` to `/model`
+5. Backend uploads results to MinIO and creates database records
 
-### Docker-in-Docker ML Execution
+**Important**: When migrating to Kubernetes, replace Docker container spawning with Kubernetes Jobs (see `kubernetes/README.md` for details).
 
-The backend spawns Docker containers to execute custom ML algorithms via `DockerContainerRunner.java`. This is a critical architectural component:
+## Development Commands
 
-- Training and prediction workloads run in isolated Docker containers
-- Containers use a shared volume (`/app/shared`) to access datasets and write outputs
-- Custom algorithms are user-uploaded Docker images stored in MinIO
-- The backend mounts the Docker socket (`/var/run/docker.sock`) to spawn containers
+### Local Development (Docker Compose)
 
-**Important:** When migrating to Kubernetes, replace `DockerContainerRunner` with Kubernetes Jobs (see `kubernetes/README.md` for implementation guidance).
-
-### Data Flow
-
-1. **Dataset Upload** → MinIO (`datasets` bucket) + PostgreSQL metadata
-2. **Algorithm Upload** → MinIO (`algorithms` bucket) + PostgreSQL configuration
-3. **Training Request** → Backend spawns Docker container → Outputs to MinIO (`models` bucket)
-4. **Prediction Request** → Backend spawns Docker container → Results to MinIO (`predictions` bucket)
-5. **Task Status** → Async task tracking via `AsyncTaskStatus` entity
-
-### Configuration Profiles
-
-The backend supports multiple Spring profiles:
-- `local` - Local development (default)
-- `docker` - Running in Docker Compose
-- Cloud profiles can be added (see `CLOUD_MIGRATION_GUIDE.md`)
-
-Profile-specific configs: `backend/src/main/resources/application-{profile}.yaml`
-
-## Database
-
-**Technology:** PostgreSQL 15
-
-**Migration Tool:** Flyway (enabled by default)
-
-**Migration Location:** `backend/src/main/resources/db/migration/`
-
-**Common Commands:**
 ```bash
-# Access database in Docker
+# Start all services (recommended for development)
+docker-compose up
+
+# Start specific service
+docker-compose up backend
+docker-compose up frontend
+
+# View logs
+docker-compose logs -f backend
+docker-compose logs -f postgres
+
+# Stop all services
+docker-compose down
+
+# Rebuild and restart (after code changes)
+docker-compose up --build backend
+docker-compose up --build frontend
+```
+
+**Service URLs**:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8080
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- MinIO Console: http://localhost:9001
+- MailHog UI: http://localhost:8025
+- PostgreSQL: localhost:5432
+
+### Backend
+
+```bash
+cd backend
+
+# Build (skip tests)
+./mvnw clean package -DskipTests
+
+# Build with tests
+./mvnw clean package
+
+# Run tests only
+./mvnw test
+
+# Run specific test
+./mvnw test -Dtest=CustomTrainingServiceTest
+
+# Run Spring Boot locally (without Docker)
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+**Spring Profiles**:
+- `local`: Local development without Docker (uses localhost for DB/MinIO)
+- `docker`: Runs inside Docker Compose (uses service names for DB/MinIO)
+- Active profile set in `application.yaml` or via `SPRING_PROFILES_ACTIVE` env var
+
+### Frontend
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+### Database
+
+```bash
+# Connect to PostgreSQL in Docker
 docker exec -it thesis_postgres psql -U postgres -d thesis_db
 
-# Backup
+# Dump database
 docker exec thesis_postgres pg_dump -U postgres thesis_db > backup.sql
 
-# Restore
-cat backup.sql | docker exec -i thesis_postgres psql -U postgres -d thesis_db
+# Restore database
+docker exec -i thesis_postgres psql -U postgres -d thesis_db < backup.sql
 ```
 
-## Object Storage (MinIO)
+## Configuration Files
 
-**Buckets:**
-- `datasets` - Uploaded datasets
-- `algorithms` - Custom algorithm Docker images
-- `models` - Trained models
-- `predictions` - Prediction inputs
-- `prediction-results` - Prediction outputs
-- `metrics` - Training metrics
-- `parameters` - Model parameters
+### Backend Configuration
+- `backend/src/main/resources/application.yaml` - Base configuration
+- `backend/src/main/resources/application-local.yaml` - Local profile overrides
+- `backend/src/main/resources/application-docker.yaml` - Docker profile overrides
 
-MinIO is used for local development. For production, migrate to S3/GCS/Azure Blob (see `CLOUD_MIGRATION_GUIDE.md`).
+### Environment Variables (Docker Compose)
+All services configured via `docker-compose.yml`. Key environment variables:
+- **Database**: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`
+- **MinIO**: `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_HOST`, `MINIO_PORT`, `MINIO_BUCKET_*`
+- **Mail**: `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`
+- **Backend**: `SPRING_PROFILES_ACTIVE`, `SERVER_PORT`, `SHARED_VOLUME`, `RUNNING_IN_DOCKER`
+- **Frontend**: `VITE_API_URL`
+
+## Deployment
+
+### Kubernetes
+
+Full Kubernetes manifests available in `kubernetes/base/`:
+- `namespace.yaml` - Creates `thesisapp` namespace
+- `postgres-statefulset.yaml` - PostgreSQL with persistent storage
+- `minio-statefulset.yaml` - MinIO object storage
+- `backend-deployment.yaml` - Backend Spring Boot app
+- `frontend-deployment.yaml` - Frontend Vite app
+- `secrets-template.yaml` - Template for creating secrets
+- `configmap.yaml` - Configuration values
+- `ingress.yaml` - Ingress routing
+
+**Deploy to Kubernetes**:
+```bash
+# Create secrets first
+kubectl create secret generic postgres-secret \
+  --from-literal=username=postgres \
+  --from-literal=password=YOUR_PASSWORD \
+  -n thesisapp
+
+kubectl create secret generic minio-secret \
+  --from-literal=access-key=minioadmin \
+  --from-literal=secret-key=YOUR_SECRET \
+  -n thesisapp
+
+# Apply all manifests
+kubectl apply -k kubernetes/base/
+
+# Check status
+kubectl get pods -n thesisapp
+kubectl logs -f deployment/backend -n thesisapp
+```
+
+**Important**: For Kubernetes deployments, the Docker-in-Docker pattern must be replaced with Kubernetes Jobs. See `kubernetes/README.md` lines 122-171 for implementation guidance.
+
+### Cloud Migration
+
+See `CLOUD_MIGRATION_GUIDE.md` for comprehensive cloud deployment guide covering:
+- AWS ECS/EKS deployment
+- RDS PostgreSQL setup
+- S3 object storage (replacing MinIO)
+- Container orchestration patterns
+- Monitoring and logging setup
+- Security hardening
+
+Key migration considerations:
+1. Replace MinIO with cloud object storage (S3, GCS, Azure Blob)
+2. Replace self-hosted PostgreSQL with managed database (RDS, Cloud SQL, Azure Database)
+3. Replace Docker-in-Docker with cloud container services (ECS Fargate, GKE Jobs, AKS Jobs)
+4. Externalize all configuration to environment variables/secrets manager
+5. Implement CloudWatch/Stackdriver logging
+
+## Key Entities
+
+### Database Schema (JPA Entities)
+- **User**: User accounts with roles (ADMIN, USER)
+- **Dataset**: User-uploaded datasets with categories and keywords
+- **DatasetConfiguration**: Dataset preprocessing configuration (target column, features, etc.)
+- **Algorithm**: Predefined Weka algorithms
+- **CustomAlgorithm**: User-provided Docker-based algorithms
+- **CustomAlgorithmImage**: Docker images for custom algorithms (TAR or DockerHub URL)
+- **AlgorithmConfiguration**: Parameter configuration for predefined algorithms
+- **CustomAlgorithmConfiguration**: Parameter configuration for custom algorithms
+- **Training**: Training execution records (links dataset config + algorithm config + results)
+- **Model**: Trained models with MinIO URLs for model file and metrics
+- **Execution**: Prediction execution records
+- **AsyncTaskStatus**: Async task tracking (training/prediction status, progress, errors)
+- **Category**: Dataset categories (user-requested, admin-approved)
+- **ModelAccessibility**: Model sharing permissions
+- **DatasetAccessibility**: Dataset sharing permissions
+
+### Accessibility Pattern
+Entities like Dataset, Model, and CustomAlgorithm use an accessibility system:
+- **PUBLIC**: Visible to all users
+- **PRIVATE**: Only visible to owner
+- **SHARED**: Shared with specific users (via join tables)
 
 ## Testing
 
-**Test Structure:**
-- Unit tests: `backend/src/test/java/com/cloud_ml_app_thesis/`
-- Integration tests: `backend/src/test/java/com/cloud_ml_app_thesis/intergration/`
+### Backend Tests
+Located in `backend/src/test/java/com/cloud_ml_app_thesis/`:
+- `unit_tests/service/` - Service layer unit tests (Mockito-based)
+- Integration tests use in-memory database or test containers
 
-**Integration Test Categories:**
-- `isolated/` - Individual service tests
-- `user/` - User-related workflows
-- `category/` - Category management
-- `full_flow_IT/` - End-to-end workflows (Weka and Custom algorithms)
-
-**Running Specific Integration Test Suites:**
+### Test Execution
 ```bash
 cd backend
-./mvnw test -Dtest="*IT"
-./mvnw test -Dtest="CustomServiceTrainingIT"
+
+# Run all tests
+./mvnw test
+
+# Run specific test class
+./mvnw test -Dtest=CustomTrainingServiceTest
+
+# Run with coverage
+./mvnw test jacoco:report
 ```
 
-## Security
+## API Documentation
 
-- JWT-based authentication using RSA keys (`backend/src/main/resources/keys/`)
-- Security configuration in `config/security/`
-- User roles defined in `entity/Role.java`
-- Password reset tokens supported
+Swagger UI available at http://localhost:8080/swagger-ui.html when running locally.
 
-## Kubernetes Deployment
+Key API endpoints:
+- `/api/auth/*` - Authentication (login, register, password reset)
+- `/api/datasets/*` - Dataset management
+- `/api/datasets/configurations/*` - Dataset configuration
+- `/api/algorithms/*` - Algorithm management
+- `/api/trainings/*` - Training workflows
+- `/api/executions/*` - Prediction execution
+- `/api/models/*` - Model management
+- `/api/tasks/*` - Async task status
+- `/api/categories/*` - Category management
 
-Full Kubernetes deployment manifests are in `kubernetes/`. Key considerations:
+## Common Tasks
 
-1. **Replace Docker-in-Docker with Kubernetes Jobs** for ML workloads
-2. **Use cloud-managed databases** instead of PostgreSQL pod
-3. **Replace MinIO with S3/GCS** for production
-4. **Configure ReadWriteMany storage** for shared ML data volumes
+### Adding a New Predefined Algorithm
+1. Add algorithm metadata to database via migration
+2. Update `AlgorithmType` enum if needed
+3. Implement training logic in `TrainService`
+4. Add corresponding configuration DTOs
 
-See `kubernetes/README.md` for deployment instructions.
-
-## Cloud Migration
-
-A comprehensive cloud migration guide is available in `CLOUD_MIGRATION_GUIDE.md`. It covers:
-- Externalizing configuration
-- Replacing MinIO with S3/GCS/Azure Blob
-- Database migration strategies
-- Replacing Docker-in-Docker with ECS Fargate/Kubernetes Jobs
-- CI/CD pipelines
-- Monitoring and logging
-- Security hardening
-
-## Environment Variables
-
-Copy `.env.example` to `.env` and customize:
-
-```bash
-cp .env.example .env
-```
-
-Key variables:
-- `POSTGRES_*` - Database credentials
-- `MINIO_*` - Object storage configuration
-- `VITE_API_URL` - Frontend API endpoint
-
-## Git Submodules
-
-This repository uses Git submodules. Ensure they are initialized:
-
-```bash
-git submodule update --init --recursive
-```
-
-The `docker-start.sh` script handles this automatically.
-
-## Common Workflows
-
-### Adding a New ML Algorithm
-
-1. Upload algorithm Docker image via frontend
-2. Image stored in MinIO `algorithms` bucket
-3. Metadata saved to `CustomAlgorithm` entity
-4. Training/prediction uses `DockerContainerRunner` to spawn container
-
-### Training a Model
-
-1. Select dataset and algorithm configuration
-2. Backend creates `Training` entity
-3. `CustomTrainingService` or Weka service spawns Docker container
-4. Container reads from `/app/shared/training-ds-{taskId}`
-5. Model saved to MinIO `models` bucket
-6. Training status tracked via `AsyncTaskStatus`
+### Adding a New Custom Algorithm
+Users upload:
+1. Docker image (TAR) or DockerHub URL via UI
+2. Algorithm parameters as JSON schema
+3. System validates image contains `/app/algorithm.py`
+4. Training uses standardized `/templates/train.py` that imports user's `algorithm.py`
 
 ### Debugging Training Issues
+1. Check task status: `GET /api/tasks/{taskId}`
+2. View training logs: `docker-compose logs -f backend`
+3. For Docker issues, check mounted volumes: `docker inspect thesis_backend`
+4. Verify shared volume exists: `ls -la /var/lib/docker/volumes/`
+5. Set `PRESERVE_SHARED_DEBUG=true` to prevent cleanup of temp directories
 
-1. Check logs: `docker compose logs -f backend`
-2. Verify shared volume: `docker exec -it thesis_backend ls /app/shared`
-3. Check MinIO buckets: http://localhost:9001
-4. Review async task status via API: `/api/tasks/{taskId}`
+### Database Migrations
+Flyway migrations in `backend/src/main/resources/db/migration/` are applied on startup.
 
-## Known Limitations
+**Create new migration**:
+1. Create file: `V{version}__{description}.sql` (e.g., `V2__add_user_role.sql`)
+2. Restart backend to apply
 
-- Docker-in-Docker requires `/var/run/docker.sock` mount (not cloud-native)
-- File size limit: 512MB (configurable in `application.yaml`)
-- MailHog is for development only; use SendGrid/SES for production
+## Important Notes
+
+1. **Weka Configuration**: System property `weka.core.ClassDiscovery.enableCache=false` is set in main class to prevent JAR scanning issues
+2. **Async Operations**: Training and prediction are async - always return taskId and poll `/api/tasks/{taskId}` for status
+3. **Transaction Management**: `CustomTrainingService` uses `PROPAGATION_NOT_SUPPORTED` and manual transaction boundaries to avoid optimistic locking conflicts
+4. **File Permissions**: Training directories are created with 777 permissions for Docker container access
+5. **Docker Socket**: Backend mounts `/var/run/docker.sock` for Docker-in-Docker - this is the primary integration point
+6. **Shared Volume**: Critical for Docker training - data exchange happens via mounted filesystem at `/app/shared`
+7. **Maven Wrapper**: Always use `./mvnw` not `mvn` to ensure consistent Maven version
+8. **Frontend Build**: TypeScript compilation happens before Vite build via `npm run build`
+
+## Cloud-Native Considerations
+
+When deploying to production cloud environments:
+1. **Replace Docker-in-Docker** with Kubernetes Jobs or cloud container services (see `kubernetes/README.md`)
+2. **Externalize secrets** using Kubernetes Secrets, AWS Secrets Manager, or equivalent
+3. **Use managed services** for PostgreSQL and object storage instead of self-hosted
+4. **Implement autoscaling** for backend pods based on CPU/memory
+5. **Add monitoring** via Prometheus/Grafana or cloud-native solutions (CloudWatch, Stackdriver)
+6. **Enable HTTPS** with cert-manager (Kubernetes) or cloud load balancer SSL termination
+7. **Configure backup strategies** for database and object storage
