@@ -85,6 +85,10 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       SHARED_VOLUME: /app/shared
       RUNNING_IN_DOCKER: true
+      # Flyway Maven Plugin environment variables (for running ./mvnw flyway:* commands in container)
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-thesis_db}
+      FLYWAY_USER: ${POSTGRES_USER:-postgres}
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-password}
     ports:
       - "8080:8080"
     volumes:
