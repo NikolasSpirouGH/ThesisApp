@@ -108,10 +108,10 @@ services:
         condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 120s
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 180s
 
   # Frontend Vite Application
   frontend:
