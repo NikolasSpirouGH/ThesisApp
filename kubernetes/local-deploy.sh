@@ -193,16 +193,47 @@ echo ""
 echo "⚙️  Step 9: Deploying Backend..."
 echo "------------------------------"
 
-# Use hostPath for local shared storage
-cat > backend-deployment-local-final.yaml <<EOF
-$(cat backend-deployment-local.yaml | sed '/persistentVolumeClaim:/,+1d' | sed '/- name: shared-storage/a\      hostPath:\n        path: /tmp/thesisapp-shared\n        type: DirectoryOrCreate')
-EOF
+# Ξεκινάμε από το backend-deployment-local.yaml
+cp backend-deployment-local.yaml backend-deployment-local-final.yaml
+
+# 1) Σβήσε το block με το persistentVolumeClaim (κεφαλή + 2 γραμμές από κάτω)
+#    π.χ.:
+#      persistentVolumeClaim:
+#        claimName: shared-pvc
+sed -i.bak '/persistentVolumeClaim:/,+2d' backend-deployment-local-final.yaml
+
+# 2) Μέσα στο block volumes:, βρες το "- name: shared-storage"
+#    και πρόσθεσε από κάτω το hostPath.
+#    Δεν ακουμπάμε τα volumeMounts, μόνο το volumes: section.
+awk '
+  /volumes:/ {
+    print;
+    in_volumes=1;
+    next
+  }
+
+  # Αν μέσα στο volumes: section συναντήσουμε νέο top-level key (π.χ. restartPolicy:),
+  # βγαίνουμε από το section.
+  in_volumes && /^[[:space:]]*[a-zA-Z0-9_]\+:/ {
+    in_volumes=0
+  }
+
+  # Μόνο μέσα στο volumes: section, όταν βρούμε το "- name: shared-storage"
+  in_volumes && /- name: shared-storage/ {
+    print;
+    print "        hostPath:";
+    print "          path: /tmp/thesisapp-shared";
+    print "          type: DirectoryOrCreate";
+    next
+  }
+
+  { print }
+' backend-deployment-local-final.yaml > backend-deployment-local-final.yaml.tmp && mv backend-deployment-local-final.yaml.tmp backend-deployment-local-final.yaml
 
 kubectl apply -f backend-deployment-local-final.yaml
 echo -e "${YELLOW}⏳ Waiting for Backend to be ready...${NC}"
-sleep 10  # Give it time to pull image and start
+sleep 10
 
-# Check backend status
 kubectl rollout status deployment/backend -n thesisapp --timeout=300s || {
     echo -e "${RED}❌ Backend failed to start${NC}"
     echo "Logs:"
@@ -210,6 +241,7 @@ kubectl rollout status deployment/backend -n thesisapp --timeout=300s || {
     exit 1
 }
 echo -e "${GREEN}✅ Backend is ready${NC}"
+
 
 # Step 10: Deploy Frontend
 echo ""
