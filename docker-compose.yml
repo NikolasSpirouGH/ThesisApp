@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -30,8 +30,8 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9000:9000"   # API (host 9000 -> container 9000)
+      - "9101:9001"   # Console (host 9101 -> container 9001)
     volumes:
       - minio_data:/data
     networks:
@@ -94,7 +94,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./backend/pom.xml:/app/pom.xml
-      - ~/.m2:/.m2
+      - maven_cache:/root/.m2
       - /var/run/docker.sock:/var/run/docker.sock
       - shared_volume:/app/shared
     networks:
@@ -147,5 +147,7 @@ volumes:
     driver: local
   minio_data:
     driver: local
-  shared_volume:  # ← ADD THIS
-      driver: local
+  shared_volume:
+    driver: local
+  maven_cache:
+    driver: local
