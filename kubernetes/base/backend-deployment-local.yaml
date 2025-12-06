@@ -1,0 +1,203 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: thesisapp
+  labels:
+    app: backend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: thesisapp
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      # Service account for managing Kubernetes Jobs (for ML training)
+      serviceAccountName: backend-sa
+      containers:
+      - name: backend
+        image: thesis-backend:local
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "k8s"
+        - name: SERVER_PORT
+          value: "8080"
+        # PostgreSQL
+        - name: POSTGRES_HOST
+          value: "postgres.thesisapp.svc.cluster.local"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: postgres-db
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: password
+        # MinIO
+        - name: MINIO_HOST
+          value: "minio.thesisapp.svc.cluster.local"
+        - name: MINIO_PORT
+          value: "9000"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-secret
+              key: access-key
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-secret
+              key: secret-key
+        # Buckets
+        - name: MINIO_BUCKET_DATASETS
+          value: "datasets"
+        - name: MINIO_BUCKET_ALGORITHMS
+          value: "algorithms"
+        - name: MINIO_BUCKET_MODELS
+          value: "models"
+        - name: MINIO_BUCKET_PREDICTIONS
+          value: "predictions"
+        - name: MINIO_BUCKET_PREDICTION_RESULTS
+          value: "prediction-results"
+        - name: MINIO_BUCKET_METRICS
+          value: "metrics"
+        - name: MINIO_BUCKET_PARAMETERS
+          value: "parameters"
+        # Email (use external service in production)
+        - name: MAIL_HOST
+          value: "smtp.gmail.com"  # Change to your email provider
+        - name: MAIL_PORT
+          value: "587"
+        - name: MAIL_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: email-secret
+              key: username
+              optional: true
+        - name: MAIL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: email-secret
+              key: password
+              optional: true
+        # Kubernetes-specific
+        - name: RUNNING_IN_K8S
+          value: "true"
+        - name: K8S_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /app/shared
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: shared-pvc
+---
+# PersistentVolumeClaim for shared ML workloads storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shared-pvc
+  namespace: thesisapp
+spec:
+  accessModes:
+  - ReadWriteMany  # Required for multiple pods accessing same storage
+  resources:
+    requests:
+      storage: 20Gi
+  # Use appropriate storage class for your cloud provider
+  # storageClassName: efs-sc  # AWS EFS
+  # storageClassName: filestore-sc  # GCP Filestore
+  # storageClassName: azure-file  # Azure Files
+---
+# ServiceAccount for backend to manage Kubernetes Jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: thesisapp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: job-manager
+  namespace: thesisapp
+rules:
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-job-manager
+  namespace: thesisapp
+subjects:
+- kind: ServiceAccount
+  name: backend-sa
+  namespace: thesisapp
+roleRef:
+  kind: Role
+  name: job-manager
+  apiGroup: rbac.authorization.k8s.io
