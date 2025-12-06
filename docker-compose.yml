@@ -30,7 +30,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"   # API (host 9000 -> container 9000)
+      - "9900:9900"   # API (host 9000 -> container 9000)
       - "9101:9001"   # Console (host 9101 -> container 9001)
     volumes:
       - minio_data:/data
