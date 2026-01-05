@@ -96,23 +96,15 @@ spec:
           value: "metrics"
         - name: MINIO_BUCKET_PARAMETERS
           value: "parameters"
-        # Email (use external service in production)
+        # Email (using MailHog for local development/testing)
         - name: MAIL_HOST
-          value: "smtp.gmail.com"  # Change to your email provider
+          value: "mailhog.thesisapp.svc.cluster.local"
         - name: MAIL_PORT
-          value: "587"
+          value: "1025"
         - name: MAIL_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: email-secret
-              key: username
-              optional: true
+          value: ""  # MailHog doesn't require authentication
         - name: MAIL_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: email-secret
-              key: password
-              optional: true
+          value: ""  # MailHog doesn't require authentication
         # Kubernetes-specific
         - name: RUNNING_IN_K8S
           value: "true"
@@ -120,6 +112,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: SHARED_VOLUME
+          value: "/app/shared"
         volumeMounts:
         - name: shared-storage
           mountPath: /app/shared
@@ -148,9 +142,9 @@ spec:
           failureThreshold: 3
       volumes:
       - name: shared-storage
-        hostPath:
-          path: /tmp/thesisapp-shared
-          type: DirectoryOrCreate
+        persistentVolumeClaim:
+          claimName: shared-pvc
+---
 # PersistentVolumeClaim for shared ML workloads storage
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -185,8 +179,8 @@ rules:
   resources: ["jobs"]
   verbs: ["create", "get", "list", "watch", "delete"]
 - apiGroups: [""]
-  resources: ["pods", "pods/log"]
-  verbs: ["get", "list", "watch"]
+  resources: ["pods", "pods/log", "pods/exec"]
+  verbs: ["create", "get", "list", "watch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

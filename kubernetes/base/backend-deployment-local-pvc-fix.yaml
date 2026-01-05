@@ -1,9 +1,0 @@
-# Replace PVC with hostPath for local testing
-# Apply this after backend-deployment-local.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: backend-volume-override
-  namespace: thesisapp
-data:
-  note: "Using hostPath for local development"
