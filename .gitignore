@@ -1,0 +1,76 @@
+# =========================
+# IDEs
+# =========================
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# VS Code
+.vscode/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# =========================
+# OS files
+# =========================
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# =========================
+# Logs & temp files
+# =========================
+
+*.log
+*.tmp
+*.temp
+*.swp
+
+# =========================
+# Text files (if not needed)
+# =========================
+
+*.txt
+
+# =========================
+# Build / output directories
+# =========================
+
+/target/
+/build/
+/dist/
+
+# =========================
+# Environment / secrets
+# =========================
+
+.env
+.env.*
+*.local
+
+# =========================
+# Node / Python (optional)
+# =========================
+
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# =========================
+# Archives
+# =========================
+
+*.zip
+*.tar
+*.tar.gz
+*.rar
