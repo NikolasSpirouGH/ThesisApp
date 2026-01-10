@@ -85,3 +85,22 @@ spec:
       resources:
         requests:
           storage: 50Gi
+---
+# NodePort service for external access to MinIO console
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-console
+  namespace: thesisapp
+  labels:
+    app: minio
+spec:
+  type: NodePort
+  ports:
+  - port: 9001
+    targetPort: 9001
+    nodePort: 30901
+    protocol: TCP
+    name: console
+  selector:
+    app: minio
