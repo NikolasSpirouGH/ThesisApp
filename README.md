@@ -1,321 +1,538 @@
-# ThesisApp
+# ThesisApp - Cloud-Based Machine Learning Platform
 
-ThesisApp is a full-stack application deployed locally on Kubernetes with Minikube. The deploy script builds the backend and frontend images, loads them into Minikube, and creates the required services (Postgres, MinIO, MailHog).
+A comprehensive full-stack ML platform for training models with **Weka algorithms** and **custom Python algorithms**, deployed on Kubernetes.
+
+## 📚 Quick Guide for Teachers/Instructors
+
+**Using Windows?** Jump to: [WSL2 Complete Setup](#wsl2-complete-setup-windows)
+**Network Issues?** See: [WSL2 Service Access](#wsl2-service-access-solutions)
+**Testing**: After setup, run tests with [Testing Guide](#testing)
+
+**Recommended for Teaching:**
+- Use **Windows with WSL2** (most students have Windows)
+- Allocate **16GB RAM** for WSL2 in `.wslconfig`
+- Use **Docker Desktop** (easier than Docker Engine)
+- Use **Ingress + minikube tunnel** (production-like, works perfectly with WSL2)
+
+---
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [WSL2 Complete Setup (Windows)](#wsl2-complete-setup-windows)
+- [Quick Start](#quick-start)
+- [WSL2 Service Access Solutions](#wsl2-service-access-solutions)
+- [Features](#features)
+- [Training Models](#training-models)
+- [Making Predictions](#making-predictions)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting-wsl2)
+- [API Documentation](#api-documentation)
+
+---
 
 ## Prerequisites
 
-- Docker
-- kubectl
-- Minikube
-- Bash
+### System Requirements
+- **RAM**: 16GB recommended (12GB minimum)
+- **Disk**: 20GB free space
+- **CPU**: 4+ cores recommended
 
-## Quick start (Minikube)
+### Required Software
+- **Docker** (20.10+)
+- **kubectl** (1.25+)
+- **Minikube** (1.30+)
+- **Maven** (3.8+) for building backend
+- **Java 21** for backend development
 
-1. From the repository root, run the deploy script:
+---
 
-```bash
-./kubernetes/deploy-to-minikube.sh
+## WSL2 Complete Setup (Windows)
+
+### Step 1: Enable WSL2
+
+Open **PowerShell as Administrator**:
+
+```powershell
+# Enable WSL
+wsl --install
+
+# Set WSL2 as default
+wsl --set-default-version 2
+
+# Install Ubuntu
+wsl --install -d Ubuntu-22.04
 ```
 
-If the script is not executable, run:
+**Restart your computer**.
 
-```bash
-chmod +x kubernetes/deploy-to-minikube.sh
+### Step 2: Configure WSL2 Resources
+
+Create `C:\Users\YourUsername\.wslconfig`:
+
+```ini
+[wsl2]
+memory=16GB
+processors=6
+swap=8GB
+localhostForwarding=true
 ```
 
-2. Wait for pods to be ready:
+**Restart WSL2** (PowerShell as Admin):
+```powershell
+wsl --shutdown
+```
+
+Then reopen Ubuntu from Start Menu.
+
+### Step 3: Install Docker
+
+**Option A: Docker Desktop (Recommended)**
+
+1. Download from https://www.docker.com/products/docker-desktop
+2. Install on Windows
+3. Open Docker Desktop → Settings → Resources → WSL Integration
+4. Enable integration with Ubuntu
+5. Restart Docker Desktop
+
+**Option B: Docker Engine (Lightweight)**
+
+```bash
+# Add Docker repository
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+
+# Add user to docker group
+sudo usermod -aG docker $USER
+
+# Start Docker and enable auto-start
+sudo service docker start
+echo 'sudo service docker start 2>/dev/null' >> ~/.bashrc
+```
+
+### Step 4: Install kubectl and Minikube
+
+```bash
+# Install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+
+# Install Minikube
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+rm minikube-linux-amd64
+
+# Install Maven and Java
+sudo apt-get install -y maven openjdk-21-jdk
+```
+
+### Step 5: Start Minikube
+
+```bash
+# Start with sufficient resources
+minikube start --driver=docker --memory=8192 --cpus=4
+
+# Verify
+minikube status
+docker ps
+```
+
+**Verify installations:**
+```bash
+docker --version
+kubectl version --client
+minikube version
+mvn --version
+java -version
+```
+
+---
+
+## Quick Start
+
+### 1. Clone and Deploy
+
+```bash
+cd ~  # Work in WSL2 filesystem (NOT /mnt/c/)
+git clone https://github.com/yourusername/ThesisApp.git
+cd ThesisApp/kubernetes
+./deploy-to-minikube.sh
+```
+
+### 2. Wait for Pods
 
 ```bash
 kubectl get pods -n thesisapp -w
+# Wait until all pods show "Running" and "1/1" ready
+# Press Ctrl+C to exit
 ```
 
-3. Port-forward services (run each in a separate terminal):
+### 3. Start Ingress Tunnel (Required for WSL2)
+
+In a **new terminal** (keep it running):
+
+```bash
+cd ~/ThesisApp
+./kubernetes/start-tunnel.sh
+```
+
+This script will:
+- ✅ Add `thesisapp.local` to `/etc/hosts` (requires sudo)
+- ✅ Start `minikube tunnel` (requires sudo password)
+- ✅ Keep the tunnel running (don't close this terminal!)
+
+**Output:**
+```
+🚇 Starting Minikube Tunnel for Ingress...
+
+After tunnel starts, access services at:
+  📱 Frontend:      http://thesisapp.local
+  🔧 Backend API:   http://thesisapp.local/api
+  📧 MailHog:       http://mailhog.thesisapp.local
+  💾 MinIO Console: http://minio.thesisapp.local
+
+⚠️  Keep this terminal open - tunnel will stop if you close it!
+```
+
+### 4. Access Services
+
+Open your **Windows browser** (Chrome, Firefox, Edge):
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Frontend** | http://thesisapp.local | Main web interface |
+| **Backend API** | http://thesisapp.local/api | REST API endpoints |
+| **Swagger UI** | http://thesisapp.local/api/swagger-ui/index.html | API documentation |
+| **MailHog** | http://mailhog.thesisapp.local | View test emails |
+| **MinIO Console** | http://minio.thesisapp.local | File storage |
+
+**Note**: WSL2 can access these domains directly from Windows browser! No additional port-forwarding needed.
+
+---
+
+## WSL2 Service Access Solutions
+
+### ✅ Recommended: Ingress + minikube tunnel (Currently Configured)
+
+**What is it?**
+- Uses Kubernetes Ingress for routing (production-like)
+- `minikube tunnel` creates network bridge between WSL2 and Minikube
+- Access services via clean domains: `http://thesisapp.local`
+
+**How to use:**
+```bash
+# Terminal 1: Start tunnel (keep running)
+./kubernetes/start-tunnel.sh
+
+# Terminal 2: Access from Windows browser
+open http://thesisapp.local
+```
+
+**Pros:**
+- ✅ Production-like setup (teaches real Kubernetes)
+- ✅ Clean URLs (no random ports)
+- ✅ Single entry point for all services
+- ✅ Works perfectly with WSL2
+- ✅ Path-based routing (`/api` → backend, `/` → frontend)
+
+**Cons:**
+- ⚠️ Requires keeping terminal open for tunnel
+
+---
+
+### Alternative: Port-Forwarding (For debugging)
+
+If tunnel isn't working, use port-forwarding:
 
 ```bash
 kubectl port-forward -n thesisapp svc/frontend 5173:5173
 kubectl port-forward -n thesisapp svc/backend 8080:8080
-kubectl port-forward -n thesisapp svc/mailhog 8025:8025
-kubectl port-forward -n thesisapp svc/minio 9001:9001
 ```
 
-4. Open the services:
+Then access at `http://localhost:5173` and `http://localhost:8080`
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8080
-- MailHog UI: http://localhost:8025
-- MinIO Console: http://localhost:9001 (user: minioadmin, pass: minioadmin)
+---
 
-## Quick start (Docker Compose)
+## Features
 
-1. Build and start services:
+- ✅ Train models with **Weka algorithms** (J48, RandomForest, LinearRegression, etc.)
+- ✅ Upload and train **custom Python algorithms** (Docker-based)
+- ✅ Make predictions on new data
+- ✅ **Automatic categorical target handling** for custom algorithms
+- ✅ View training metrics and visualizations
+- ✅ Share models with other users
+- ✅ **NodePort services** (no port-forwarding needed on native Linux)
+- ✅ **WSL2-optimized** with `minikube service` support
 
-```bash
-docker compose up --build
-```
+---
 
-If your Docker user mapping differs, run:
+## Training Models
 
-```bash
-UID=$(id -u) GID=$(id -g) docker compose up --build
-```
-
-2. Wait until the backend is healthy:
+### Weka Algorithms (Predefined)
 
 ```bash
-curl http://localhost:8080/actuator/health
-```
+# 1. Login and get token
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"bigspy","password":"adminPassword"}'
 
-3. Open the services:
+export TOKEN="your_jwt_token_here"
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8080
-- MailHog UI: http://localhost:8025
-- MinIO Console: http://localhost:9101 (user: minioadmin, pass: minioadmin)
-- MinIO API: http://localhost:9900
-- Postgres: localhost:5434
-
-To stop containers:
-
-```bash
-docker compose down
-```
-
-## API endpoints
-
-Base URL: `http://localhost:8080`
-
-Authentication: most endpoints require `Authorization: Bearer <token>` from `/api/auth/login`.
-
-API docs: `http://localhost:8080/swagger-ui/index.html` (OpenAPI JSON at `http://localhost:8080/v3/api-docs`)
-
-Public endpoints (no auth):
-
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/forgot-password`
-- `POST /api/auth/reset-password`
-- `GET /api/algorithms/get-algorithms`
-- `GET /api/algorithms/weka/{id}/options`
-- `POST /api/train/parse-dataset-columns`
-- `GET /actuator/health`
-
-Endpoints overview:
-
-- Auth
-  - `POST /api/auth/register`
-  - `POST /api/auth/login`
-  - `POST /api/auth/logout`
-  - `PATCH /api/auth/change-password`
-  - `POST /api/auth/forgot-password`
-  - `POST /api/auth/reset-password`
-- Users
-  - `GET /api/users/me`
-  - `GET /api/users/all`
-  - `GET /api/users/details/{username}`
-  - `PUT /api/users/update`
-  - `PUT /api/users/updateByAdmin/{username}`
-  - `PATCH /api/users/delete`
-  - `PATCH /api/users/delete/{username}`
-- Algorithms
-  - `POST /api/algorithms/createCustomAlgorithm` (multipart/form-data)
-  - `GET /api/algorithms/get-algorithms`
-  - `GET /api/algorithms/weka/{id}/options`
-  - `GET /api/algorithms/get-custom-algorithms`
-  - `POST /api/algorithms`
-  - `PATCH /api/algorithms/weka/update/{id}`
-  - `POST /api/algorithms/choose-algorithm`
-  - `GET /api/algorithms/{id}`
-  - `POST /api/algorithms/search-custom-algorithms`
-  - `POST /api/algorithms/search-weka-algorithms`
-  - `PATCH /api/algorithms/custom/update/{id}`
-  - `DELETE /api/algorithms/{id}`
-  - `DELETE /api/algorithms/custom/delete/{id}`
-- Algorithm configurations
-  - `POST /api/algorithm-configurations/{algoId}`
-  - `PATCH /api/algorithm-configurations/{id}`
-  - `DELETE /api/algorithm-configurations/{id}`
-- Categories
-  - `GET /api/categories`
-  - `GET /api/categories/{id}`
-  - `GET /api/categories/requests/pending`
-  - `GET /api/categories/requests/all`
-  - `POST /api/categories/addCategory`
-  - `POST /api/categories/{requestId}/approve`
-  - `PATCH /api/categories/{requestId}/reject`
-  - `PATCH /api/categories/{id}/update`
-  - `DELETE /api/categories/{id}/delete`
-- Datasets
-  - `POST /api/datasets/search`
-  - `POST /api/datasets/upload` (multipart/form-data)
-  - `PATCH /api/datasets` (multipart/form-data)
-  - `GET /api/datasets`
-  - `GET /api/datasets/infos/{id}`
-  - `GET /api/datasets/{id}`
-  - `GET /api/datasets/info/{id}`
-  - `GET /api/datasets/download/{id}`
-  - `DELETE /api/datasets/{id}`
-  - `GET /api/datasets/{email}/category`
-- Dataset configurations
-  - `POST /api/dataset-configurations/upload-dataset-configuration`
-  - `GET /api/dataset-configurations/configurations`
-  - `POST /api/dataset-configurations/create-dataset-conf`
-- Dataset sharing (no /api prefix)
-  - `POST /dataset/share/{datasetId}`
-  - `PATCH /dataset/share/{datasetId}/share`
-  - `POST /dataset/share/{datasetId}/copy`
-  - `POST /dataset/share/{datasetId}/decline`
-- Training
-  - `POST /api/train/train-model` (multipart/form-data)
-  - `POST /api/train/custom` (multipart/form-data)
-  - `GET /api/train/trainings`
-  - `GET /api/train/retrain/options`
-  - `GET /api/train/retrain/trainings/{trainingId}`
-  - `GET /api/train/retrain/models/{modelId}`
-  - `DELETE /api/train/delete/{id}`
-  - `GET /api/train/used-algorithms`
-  - `POST /api/train/parse-dataset-columns` (multipart/form-data)
-- Models
-  - `GET /api/models`
-  - `GET /api/models/metrics/{modelId}`
-  - `GET /api/models/metrics-bar/model/{modelId}`
-  - `GET /api/models/metrics-confusion/model/{id}`
-  - `GET /api/models/metrics-scatter/model/{id}`
-  - `GET /api/models/metrics-residual/model/{id}`
-  - `GET /api/models/metrics-cluster-sizes/model/{modelId}`
-  - `GET /api/models/metrics-scatter-cluster/model/{modelId}`
-  - `GET /api/models/status/{modelId}`
-  - `POST /api/models/finalize/{modelId}`
-  - `GET /api/models/training/{trainingId}/download-model`
-  - `GET /api/models/{modelId}`
-  - `PUT /api/models/update/{modelId}`
-  - `PATCH /api/models/updateContent/{modelId}`
-  - `DELETE /api/models/delete/{modelId}`
-  - `POST /api/models/search`
-- Model sharing
-  - `POST /api/models/sharing/{modelId}/share`
-  - `POST /api/models/sharing/{modelId}/revoke`
-- Model executions
-  - `POST /api/model-exec/execute` (multipart/form-data)
-  - `GET /api/model-exec/{executionId}/result`
-  - `DELETE /api/model-exec/delete/{executionId}`
-  - `POST /api/model-exec/search`
-  - `GET /api/model-exec/{executionId}`
-- Task status
-  - `GET /api/tasks/{trackingId}`
-  - `GET /api/tasks/{taskId}/model-id`
-  - `GET /api/tasks/{taskId}/training-id`
-  - `GET /api/tasks/{taskId}/execution-id`
-  - `PUT /api/tasks/{taskId}/stop`
-
-## Training and execution guides
-
-All training/execution endpoints are asynchronous. They return a `taskId`, which you can track via `/api/tasks/{taskId}` and use to fetch generated IDs.
-
-### Weka (predefined) training
-
-1. Choose a predefined algorithm:
-
-```bash
-curl http://localhost:8080/api/algorithms/get-algorithms
-```
-
-2. (Optional) Inspect dataset columns:
-
-```bash
-curl -F "file=@/path/to/train.csv" \
-  http://localhost:8080/api/train/parse-dataset-columns
-```
-
-3. Start training:
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  -F "file=@/path/to/train.csv" \
-  -F "algorithmId=1" \
+# 2. Train model
+curl -X POST http://localhost:8080/api/train/train-model \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@training_data.csv" \
+  -F "algorithmId=10" \
   -F "basicCharacteristicsColumns=1,2,3" \
-  -F "targetClassColumn=4" \
-  -F "options=-K 3" \
-  http://localhost:8080/api/train/train-model
-```
+  -F "targetClassColumn=4"
 
-4. Track the task and fetch model/training IDs:
-
-```bash
+# 3. Track progress
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/tasks/{taskId}
 
+# 4. Get model ID when completed
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/tasks/{taskId}/model-id
-
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/tasks/{taskId}/training-id
 ```
 
-### Custom algorithm training
+### Custom Python Algorithms
 
-1. Upload a custom algorithm (TAR or Docker Hub URL):
+See example in: `backend/src/test/resources/custom_test/customer_purchase_predictor/`
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  -F "name=MyCustomAlgo" \
+# 1. Build Docker image
+cd your_algorithm_directory
+docker build -t my_algo:latest .
+docker save my_algo:latest -o my_algo.tar
+
+# 2. Upload algorithm
+curl -X POST http://localhost:8080/api/algorithms/createCustomAlgorithm \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "name=my_algorithm" \
   -F "version=1.0.0" \
   -F "accessibility=PUBLIC" \
-  -F "keywords=custom" \
-  -F "keywords=python" \
-  -F "parametersFile=@/path/to/params.json" \
-  -F "dockerTarFile=@/path/to/algorithm-image.tar" \
-  http://localhost:8080/api/algorithms/createCustomAlgorithm
-```
+  -F "parametersFile=@parameters.json" \
+  -F "dockerTarFile=@my_algo.tar"
 
-2. Train using the custom algorithm ID returned above:
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
+# 3. Train with custom algorithm
+curl -X POST http://localhost:8080/api/train/custom \
+  -H "Authorization: Bearer $TOKEN" \
   -F "algorithmId=10" \
-  -F "datasetFile=@/path/to/train.csv" \
-  -F "parametersFile=@/path/to/params.json" \
-  -F "basicAttributesColumns=feature1,feature2" \
-  -F "targetColumn=class" \
-  http://localhost:8080/api/train/custom
+  -F "datasetFile=@training_data.csv"
 ```
 
-3. Track the task and fetch IDs (same task endpoints as Weka training).
+---
 
-### Model execution (prediction)
-
-Use the same execution endpoint for Weka or custom models. It returns a `taskId`, which you can use to fetch the execution ID and download results.
+## Making Predictions
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  -F "modelId=123" \
-  -F "predictionFile=@/path/to/predict.csv" \
-  http://localhost:8080/api/model-exec/execute
-```
+# 1. Execute prediction
+curl -X POST http://localhost:8080/api/model-exec/execute \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "modelId=42" \
+  -F "predictionFile=@test_data.csv"
 
-```bash
+# 2. Get execution ID
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/tasks/{taskId}/execution-id
 
+# 3. Download results
 curl -H "Authorization: Bearer $TOKEN" \
-  -o prediction-result.csv \
+  -o predictions.csv \
   http://localhost:8080/api/model-exec/{executionId}/result
 ```
 
-## Notes
+---
 
-- The deploy script uses local images: `thesis-backend:local` and `thesis-frontend:local`.
-- It creates default secrets for Postgres and MinIO for local development.
+## Testing
+
+### Run Integration Tests
+
+```bash
+cd backend
+
+# Get backend URL (if using minikube service)
+BACKEND_URL=$(minikube service backend -n thesisapp --url)
+BACKEND_HOST=$(echo $BACKEND_URL | cut -d: -f1-2)
+BACKEND_PORT=$(echo $BACKEND_URL | cut -d: -f3)
+
+# Run tests
+mvn test -Dtest=BasicFullWekaFlowIT \
+  -Dtest.host=$BACKEND_HOST \
+  -Dtest.port=$BACKEND_PORT
+```
+
+**Or with port-forwarding:**
+```bash
+# Terminal 1: Port-forward backend
+kubectl port-forward -n thesisapp svc/backend 8080:8080
+
+# Terminal 2: Run test
+mvn test -Dtest=BasicFullWekaFlowIT
+```
+
+---
+
+## Troubleshooting (WSL2)
+
+### Docker Not Starting
+
+```bash
+# Check status
+sudo service docker status
+
+# Start Docker
+sudo service docker start
+
+# Auto-start on WSL launch (add to ~/.bashrc)
+echo 'sudo service docker start 2>/dev/null' >> ~/.bashrc
+```
+
+### Cannot Access Services from Windows Browser
+
+✅ **Solution**: Use `minikube service` command instead of NodePort URLs:
+
+```bash
+minikube service frontend -n thesisapp
+minikube service backend -n thesisapp --url
+```
+
+### Port Already in Use
+
+```bash
+# Find process using port 8080
+sudo lsof -i :8080
+
+# Kill it
+sudo kill -9 <PID>
+```
+
+### Minikube Won't Start
+
+```bash
+# Delete and recreate
+minikube delete
+minikube start --driver=docker --memory=8192 --cpus=4
+```
+
+### Pods Crashing (OOMKilled)
+
+Increase WSL2 memory in `C:\Users\YourUsername\.wslconfig`:
+
+```ini
+[wsl2]
+memory=20GB
+processors=8
+```
+
+Then restart WSL2 (PowerShell as Admin):
+```powershell
+wsl --shutdown
+```
+
+### File Performance Issues
+
+✅ Work in WSL2 filesystem (`~/ThesisApp`), NOT Windows filesystem (`/mnt/c/`)
+
+```bash
+# BAD (slow):
+cd /mnt/c/Users/yourname/ThesisApp
+
+# GOOD (fast):
+cd ~/ThesisApp
+```
+
+### Git Line Ending Issues
+
+```bash
+# Configure Git for Unix line endings
+git config --global core.autocrlf input
+git config --global core.eol lf
+
+# Fix existing files
+sudo apt-get install dos2unix
+find . -name "*.sh" -exec dos2unix {} \;
+```
+
+---
+
+## API Documentation
+
+Access Swagger UI at:
+- Port-forward: http://localhost:8080/swagger-ui/index.html
+- Minikube service: Get URL from `minikube service backend --url`
+
+---
+
+## Default Test Users
+
+| Username | Password | Role |
+|----------|----------|------|
+| bigspy | adminPassword | ADMIN |
+| johnken | adminPassword | ADMIN |
+| nickriz | userPassword | USER |
+
+---
+
+## MinIO Credentials
+
+```bash
+# Get credentials
+kubectl get secret minio-secret -n thesisapp -o jsonpath='{.data.access-key}' | base64 -d
+kubectl get secret minio-secret -n thesisapp -o jsonpath='{.data.secret-key}' | base64 -d
+```
+
+---
 
 ## Cleanup
 
-To remove the namespace and all resources:
-
 ```bash
+# Delete all resources
 kubectl delete namespace thesisapp
-```
 
-To stop Minikube:
-
-```bash
+# Stop Minikube
 minikube stop
+
+# Delete Minikube cluster
+minikube delete
 ```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│         Frontend (TypeScript)                │
+│         NodePort: 30173                      │
+└──────────────────┬──────────────────────────┘
+                   │ REST API
+┌──────────────────▼──────────────────────────┐
+│      Backend (Spring Boot + Java 21)        │
+│         NodePort: 30080                      │
+│  ┌─────────┐  ┌──────────┐  ┌─────────┐    │
+│  │  Weka   │  │  Custom  │  │  Model  │    │
+│  │Training │  │ Training │  │  Exec   │    │
+│  └─────────┘  └──────────┘  └─────────┘    │
+└───────┬────────────┬───────────┬────────────┘
+        │            │           │
+┌───────▼────┐  ┌────▼─────┐  ┌─▼──────────┐
+│ PostgreSQL │  │  MinIO   │  │   Docker   │
+│  Database  │  │ Storage  │  │   Engine   │
+└────────────┘  └──────────┘  └────────────┘
+```
+
+---
+
+**Happy Machine Learning! 🚀🤖**

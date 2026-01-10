@@ -6,11 +6,10 @@ metadata:
   labels:
     app: frontend
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
   - port: 5173
     targetPort: 5173
-    nodePort: 30173  # Access via localhost:30173
     protocol: TCP
     name: http
   selector:
@@ -42,7 +41,9 @@ spec:
           name: http
         env:
         - name: VITE_API_URL
-          value: "http://192.168.58.2:30080"
+          value: "http://thesisapp.local/api"
+        - name: DANGEROUSLY_DISABLE_HOST_CHECK
+          value: "true"
         resources:
           requests:
             memory: "256Mi"

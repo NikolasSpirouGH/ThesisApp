@@ -26,6 +26,14 @@ fi
 echo "🚀 Deploying ThesisApp to Minikube..."
 
 # -----------------------------
+# Enable Ingress addon if not enabled
+# -----------------------------
+if ! minikube addons list | grep -q "ingress.*enabled"; then
+  echo "🔌 Enabling Ingress addon..."
+  minikube addons enable ingress
+fi
+
+# -----------------------------
 # Build backend JAR + Docker image
 # -----------------------------
 echo "🧪 Building backend JAR with Maven..."
@@ -131,6 +139,7 @@ kubectl apply -n thesisapp -f minio-statefulset.yaml
 kubectl apply -n thesisapp -f mailhog-deployment.yaml
 kubectl apply -n thesisapp -f backend-deployment-local-final.yaml
 kubectl apply -n thesisapp -f frontend-deployment.yaml
+kubectl apply -f ingress.yaml  # Ingress for routing
 
 # -----------------------------
 # Ensure pods come back up and pick the new image
@@ -155,14 +164,14 @@ echo ""
 echo "💡 Next steps:"
 echo "   1. Watch pods: kubectl get pods -n thesisapp -w"
 echo ""
-echo "   2. Port-forward services (run each in a separate terminal):"
-echo "      kubectl port-forward -n thesisapp svc/frontend 5173:5173"
-echo "      kubectl port-forward -n thesisapp svc/backend 8080:8080"
-echo "      kubectl port-forward -n thesisapp svc/mailhog 8025:8025"
-echo "      kubectl port-forward -n thesisapp svc/minio 9001:9001"
+echo "   2. Start Ingress tunnel (required for WSL2):"
+echo "      cd ~/ThesisApp && ./kubernetes/start-tunnel.sh"
 echo ""
-echo "   3. Access URLs:"
-echo "      Frontend:      http://localhost:5173"
-echo "      Backend:       http://localhost:8080"
-echo "      MailHog UI:    http://localhost:8025"
-echo "      MinIO Console: http://localhost:9001 (user: minioadmin, pass: minioadmin)"
+echo "   3. Access services from Windows browser:"
+echo "      Frontend:      http://thesisapp.local"
+echo "      Backend API:   http://thesisapp.local/api"
+echo "      Swagger:       http://thesisapp.local/api/swagger-ui/index.html"
+echo "      MailHog UI:    http://mailhog.thesisapp.local"
+echo "      MinIO Console: http://minio.thesisapp.local"
+echo ""
+echo "   Note: Keep the tunnel terminal open while using the app!"
