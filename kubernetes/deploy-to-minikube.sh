@@ -34,6 +34,18 @@ if ! minikube addons list | grep -q "ingress.*enabled"; then
 fi
 
 # -----------------------------
+# Patch Ingress Controller to LoadBalancer (for WSL2 tunnel)
+# -----------------------------
+echo "🔧 Patching ingress-nginx-controller to LoadBalancer type..."
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=120s >/dev/null 2>&1 || true
+
+kubectl patch svc ingress-nginx-controller -n ingress-nginx \
+  -p '{"spec":{"type":"LoadBalancer"}}' >/dev/null 2>&1 || echo "  (already patched or not ready yet)"
+
+# -----------------------------
 # Build backend JAR + Docker image
 # -----------------------------
 echo "🧪 Building backend JAR with Maven..."

@@ -178,32 +178,37 @@ kubectl get pods -n thesisapp -w
 # Press Ctrl+C to exit
 ```
 
-### 3. Start Ingress Tunnel (Required for WSL2)
+### 3. Start Port-Forward (Required for WSL2 → Windows Browser)
 
 In a **new terminal** (keep it running):
 
 ```bash
-cd ~/ThesisApp
-./kubernetes/start-tunnel.sh
+cd ~/ThesisApp/kubernetes
+./start-tunnel-wsl2.sh
 ```
 
 This script will:
-- ✅ Add `thesisapp.local` to `/etc/hosts` (requires sudo)
-- ✅ Start `minikube tunnel` (requires sudo password)
+- ✅ Update Windows hosts file with WSL2 IP (requires Windows Admin popup)
+- ✅ Start port-forward on port 80 (requires sudo password)
 - ✅ Keep the tunnel running (don't close this terminal!)
 
 **Output:**
 ```
-🚇 Starting Minikube Tunnel for Ingress...
+🚇 Starting WSL2-friendly Port Forward...
 
-After tunnel starts, access services at:
-  📱 Frontend:      http://thesisapp.local
-  🔧 Backend API:   http://thesisapp.local/api
-  📧 MailHog:       http://mailhog.thesisapp.local
-  💾 MinIO Console: http://minio.thesisapp.local
+✅ Minikube is running at 192.168.49.2
+✅ WSL2 IP is 172.22.101.50
 
-⚠️  Keep this terminal open - tunnel will stop if you close it!
+📝 Updating Windows hosts file to use WSL2 IP...
+   ✅ Updated Windows hosts file with WSL2 IP: 172.22.101.50
+
+🚀 Starting port-forward on port 80 (requires sudo)...
+   Forwarding 0.0.0.0:80 → ingress-nginx-controller:80
+
+Forwarding from 0.0.0.0:80 -> 80
 ```
+
+**Note**: You may see a Windows UAC prompt - click "Yes" to update hosts file.
 
 ### 4. Access Services
 
@@ -217,37 +222,46 @@ Open your **Windows browser** (Chrome, Firefox, Edge):
 | **MailHog** | http://mailhog.thesisapp.local | View test emails |
 | **MinIO Console** | http://minio.thesisapp.local | File storage |
 
-**Note**: WSL2 can access these domains directly from Windows browser! No additional port-forwarding needed.
+**Note**: Make sure the port-forward tunnel (`start-tunnel-wsl2.sh`) is running first!
 
 ---
 
 ## WSL2 Service Access Solutions
 
-### ✅ Recommended: Ingress + minikube tunnel (Currently Configured)
+### ✅ Recommended: Ingress + Port-Forward (For WSL2 → Windows Browser)
 
 **What is it?**
 - Uses Kubernetes Ingress for routing (production-like)
-- `minikube tunnel` creates network bridge between WSL2 and Minikube
+- `kubectl port-forward` exposes services on WSL2 IP (reachable from Windows)
 - Access services via clean domains: `http://thesisapp.local`
 
 **How to use:**
 ```bash
-# Terminal 1: Start tunnel (keep running)
-./kubernetes/start-tunnel.sh
+# Terminal 1: Start port-forward (keep running)
+./kubernetes/start-tunnel-wsl2.sh
 
 # Terminal 2: Access from Windows browser
 open http://thesisapp.local
 ```
 
+**Why this method?**
+- ✅ **Works with WSL2 → Windows browser** (minikube tunnel doesn't)
+- ✅ Clean URLs (no random ports)
+- ✅ Production-like setup (teaches real Kubernetes Ingress)
+- ✅ Single entry point for all services
+- ✅ Path-based routing (`/api` → backend, `/` → frontend)
+- ✅ Automatic Windows hosts file management
+
 **Pros:**
 - ✅ Production-like setup (teaches real Kubernetes)
 - ✅ Clean URLs (no random ports)
 - ✅ Single entry point for all services
-- ✅ Works perfectly with WSL2
+- ✅ Works perfectly from Windows browser
 - ✅ Path-based routing (`/api` → backend, `/` → frontend)
 
 **Cons:**
-- ⚠️ Requires keeping terminal open for tunnel
+- ⚠️ Requires keeping terminal open for port-forward
+- ⚠️ Requires sudo for port 80
 
 ---
 
@@ -399,14 +413,48 @@ sudo service docker start
 echo 'sudo service docker start 2>/dev/null' >> ~/.bashrc
 ```
 
-### Cannot Access Services from Windows Browser
+### Cannot Access thesisapp.local from Windows Browser
 
-✅ **Solution**: Use `minikube service` command instead of NodePort URLs:
+**Problem**: Browser shows "This site can't be reached" or "DNS_PROBE_FINISHED_NXDOMAIN"
 
+**Solution 1: Verify Windows hosts file**
+
+1. Open Notepad as Administrator
+2. Open: `C:\Windows\System32\drivers\etc\hosts`
+3. Verify it contains your **current WSL2 IP**:
+   ```
+   172.22.101.50 thesisapp.local mailhog.thesisapp.local minio.thesisapp.local
+   ```
+4. If IP is wrong (like `192.168.49.2`), delete that line and add correct WSL2 IP
+
+**Find your WSL2 IP:**
 ```bash
-minikube service frontend -n thesisapp
-minikube service backend -n thesisapp --url
+hostname -I | awk '{print $1}'
 ```
+
+**Solution 2: Flush DNS cache (Windows)**
+
+Open CMD as Administrator:
+```cmd
+ipconfig /flushdns
+```
+
+**Solution 3: Restart port-forward**
+
+Press Ctrl+C on the running `start-tunnel-wsl2.sh` and restart it:
+```bash
+./kubernetes/start-tunnel-wsl2.sh
+```
+
+**Solution 4: Test from WSL2 first**
+
+Verify it works from WSL2:
+```bash
+curl -H "Host: thesisapp.local" http://localhost
+# Should return HTML (HTTP 200)
+```
+
+If this works but Windows browser doesn't, it's a hosts file issue.
 
 ### Port Already in Use
 
