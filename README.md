@@ -1,33 +1,32 @@
 # ThesisApp - Cloud-Based Machine Learning Platform
 
-A comprehensive full-stack ML platform for training models with **Weka algorithms** and **custom Python algorithms**, deployed on Kubernetes.
+A comprehensive full-stack machine learning platform for training models with Weka algorithms and custom Python algorithms, deployed on Kubernetes. This system demonstrates cloud-native architecture, microservices design, and scalable ML workload orchestration.
 
-## 📚 Quick Guide for Teachers/Instructors
+## Overview
 
-**Using Windows?** Jump to: [WSL2 Complete Setup](#wsl2-complete-setup-windows)
-**Network Issues?** See: [WSL2 Service Access](#wsl2-service-access-solutions)
-**Testing**: After setup, run tests with [Testing Guide](#testing)
+ThesisApp provides a complete environment for:
+- Training machine learning models using built-in Weka algorithms or custom Python implementations
+- Executing predictions on trained models
+- Managing datasets, algorithms, and model lifecycle
+- Collaborative model sharing between users
+- Production-ready deployment on Kubernetes with proper ingress routing
 
-**Recommended for Teaching:**
-- Use **Windows with WSL2** (most students have Windows)
-- Allocate **16GB RAM** for WSL2 in `.wslconfig`
-- Use **Docker Desktop** (easier than Docker Engine)
-- Use **Ingress + minikube tunnel** (production-like, works perfectly with WSL2)
+**Key Technologies**: Spring Boot (Java 21), TypeScript, PostgreSQL, MinIO, Kubernetes, Docker, Weka ML Library
 
 ---
+
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [WSL2 Complete Setup (Windows)](#wsl2-complete-setup-windows)
+- [System Architecture](#system-architecture)
+- [Deployment Guide (WSL2 + Windows)](#deployment-guide-wsl2--windows)
 - [Quick Start](#quick-start)
-- [WSL2 Service Access Solutions](#wsl2-service-access-solutions)
-- [Features](#features)
-- [Training Models](#training-models)
-- [Making Predictions](#making-predictions)
+- [Accessing Services](#accessing-services)
 - [Testing](#testing)
-- [Troubleshooting](#troubleshooting-wsl2)
-- [API Documentation](#api-documentation)
+- [API Usage Examples](#api-usage-examples)
+- [Troubleshooting](#troubleshooting)
+- [Configuration Reference](#configuration-reference)
 
 ---
 
@@ -42,16 +41,69 @@ A comprehensive full-stack ML platform for training models with **Weka algorithm
 - **Docker** (20.10+)
 - **kubectl** (1.25+)
 - **Minikube** (1.30+)
-- **Maven** (3.8+) for building backend
-- **Java 21** for backend development
+- **Git** for cloning repository
+
+### Optional (Development Only)
+- **Maven** (3.8+) - Only needed for local backend development
+- **Java 21** - Only needed for local backend development
+- **Node.js** (18+) - Only needed for local frontend development
+
+**Note**: Maven and Java are NOT required for deployment. The Docker build process handles all compilation.
 
 ---
 
-## WSL2 Complete Setup (Windows)
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Kubernetes Ingress                        │
+│              (nginx - Route: /api, /)                        │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+       ┌───────────────┴────────────────┐
+       │                                │
+┌──────▼────────┐              ┌───────▼─────────┐
+│   Frontend    │              │    Backend      │
+│  (TypeScript) │              │  (Spring Boot)  │
+│   Port: 5173  │              │   Port: 8080    │
+└───────────────┘              └────────┬────────┘
+                                        │
+                    ┌───────────────────┼─────────────────┐
+                    │                   │                 │
+             ┌──────▼───────┐   ┌──────▼──────┐   ┌─────▼──────┐
+             │  PostgreSQL  │   │    MinIO    │   │  MailHog   │
+             │  (Database)  │   │  (Storage)  │   │  (Email)   │
+             └──────────────┘   └─────────────┘   └────────────┘
+                                        │
+                                ┌───────▼────────┐
+                                │  Kubernetes    │
+                                │  Jobs/Pods     │
+                                │  (ML Training) │
+                                └────────────────┘
+```
+
+### Architecture Highlights
+
+**Ingress-Based Routing**: Uses Kubernetes Ingress with nginx controller for production-like routing:
+- `/` routes to frontend service
+- `/api` routes to backend service
+- Separate subdomains for auxiliary services (mailhog, minio)
+
+**Microservices Design**: Separate deployments for frontend, backend, and data services, allowing independent scaling and updates.
+
+**Stateful Storage**: PostgreSQL and MinIO use StatefulSets with persistent volumes for data durability.
+
+**Dynamic ML Workloads**: Custom algorithms run as Kubernetes Jobs, providing isolation and resource management.
+
+---
+
+## Deployment Guide (WSL2 + Windows)
+
+This guide is optimized for Windows users deploying to WSL2, which is the most common scenario for students and educational environments.
 
 ### Step 1: Enable WSL2
 
-Open **PowerShell as Administrator**:
+Open PowerShell as Administrator:
 
 ```powershell
 # Enable WSL
@@ -64,11 +116,11 @@ wsl --set-default-version 2
 wsl --install -d Ubuntu-22.04
 ```
 
-**Restart your computer**.
+Restart your computer after installation.
 
 ### Step 2: Configure WSL2 Resources
 
-Create `C:\Users\YourUsername\.wslconfig`:
+Create or edit `C:\Users\YourUsername\.wslconfig`:
 
 ```ini
 [wsl2]
@@ -78,24 +130,24 @@ swap=8GB
 localhostForwarding=true
 ```
 
-**Restart WSL2** (PowerShell as Admin):
+Restart WSL2 (PowerShell as Administrator):
 ```powershell
 wsl --shutdown
 ```
 
-Then reopen Ubuntu from Start Menu.
+Then reopen Ubuntu from the Start Menu.
 
 ### Step 3: Install Docker
 
-**Option A: Docker Desktop (Recommended)**
+**Option A: Docker Desktop (Recommended for Students)**
 
 1. Download from https://www.docker.com/products/docker-desktop
 2. Install on Windows
-3. Open Docker Desktop → Settings → Resources → WSL Integration
-4. Enable integration with Ubuntu
+3. Open Docker Desktop > Settings > Resources > WSL Integration
+4. Enable integration with your Ubuntu distribution
 5. Restart Docker Desktop
 
-**Option B: Docker Engine (Lightweight)**
+**Option B: Docker Engine (Lightweight Alternative)**
 
 ```bash
 # Add Docker repository
@@ -115,10 +167,14 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io
 # Add user to docker group
 sudo usermod -aG docker $USER
 
-# Start Docker and enable auto-start
+# Start Docker
 sudo service docker start
+
+# Enable auto-start on WSL launch
 echo 'sudo service docker start 2>/dev/null' >> ~/.bashrc
 ```
+
+Log out and log back into WSL2 for group changes to take effect.
 
 ### Step 4: Install kubectl and Minikube
 
@@ -133,250 +189,165 @@ curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-
 sudo install minikube-linux-amd64 /usr/local/bin/minikube
 rm minikube-linux-amd64
 
-# Install Maven and Java
-sudo apt-get install -y maven openjdk-21-jdk
+# Verify installations
+docker --version
+kubectl version --client
+minikube version
 ```
 
 ### Step 5: Start Minikube
 
 ```bash
-# Start with sufficient resources
+# Start Minikube with appropriate resources
 minikube start --driver=docker --memory=8192 --cpus=4
 
-# Verify
+# Verify cluster is running
 minikube status
-docker ps
-```
-
-**Verify installations:**
-```bash
-docker --version
-kubectl version --client
-minikube version
-mvn --version
-java -version
+kubectl get nodes
 ```
 
 ---
 
 ## Quick Start
 
-### 1. Clone and Deploy
+### 1. Clone Repository
 
 ```bash
-cd ~  # Work in WSL2 filesystem (NOT /mnt/c/)
+# Work in WSL2 filesystem for better performance
+cd ~
 git clone https://github.com/yourusername/ThesisApp.git
-cd ThesisApp/kubernetes
+cd ThesisApp
+```
+
+**Important**: Always work in the WSL2 filesystem (`~/ThesisApp`), NOT the Windows filesystem (`/mnt/c/...`). This ensures optimal file I/O performance.
+
+### 2. Deploy Application
+
+```bash
+cd kubernetes
 ./deploy-to-minikube.sh
 ```
 
-### 2. Wait for Pods
+This script will:
+1. Build backend JAR with Maven (inside Docker)
+2. Build Docker images for backend and frontend
+3. Load images into Minikube
+4. Deploy all Kubernetes resources (namespace, secrets, deployments, services, ingress)
+5. Patch ingress controller for WSL2 compatibility
+
+Expected duration: 5-10 minutes depending on your system.
+
+### 3. Wait for Pods to be Ready
 
 ```bash
 kubectl get pods -n thesisapp -w
-# Wait until all pods show "Running" and "1/1" ready
-# Press Ctrl+C to exit
 ```
 
-### 3. Start Port-Forward (Required for WSL2 → Windows Browser)
+Wait until all pods show `Running` status and `1/1` ready. Press Ctrl+C to exit watch mode.
 
-In a **new terminal** (keep it running):
+Expected pods:
+- backend (2 replicas)
+- frontend (2 replicas)
+- postgres-0
+- minio-0
+- mailhog
+
+### 4. Start Port-Forward for WSL2
+
+In a **separate terminal window** (keep this running):
 
 ```bash
 cd ~/ThesisApp/kubernetes
 ./start-tunnel-wsl2.sh
 ```
 
-This script will:
-- ✅ Update Windows hosts file with WSL2 IP (requires Windows Admin popup)
-- ✅ Start port-forward on port 80 (requires sudo password)
-- ✅ Keep the tunnel running (don't close this terminal!)
+**What this does**:
+- Displays your current WSL2 IP address
+- Shows the hosts file entry you need to add to Windows
+- Starts port-forwarding from WSL2:80 to Kubernetes ingress
 
-**Output:**
-```
-🚇 Starting WSL2-friendly Port Forward...
+**Manual Step Required**: Add the displayed entry to your Windows hosts file:
 
-✅ Minikube is running at 192.168.49.2
-✅ WSL2 IP is 172.22.101.50
+1. Open Notepad as Administrator (Right-click > Run as administrator)
+2. Open: `C:\Windows\System32\drivers\etc\hosts`
+3. Add the line shown by the script (e.g., `172.22.101.50 thesisapp.local mailhog.thesisapp.local minio.thesisapp.local`)
+4. Save and close
 
-📝 Updating Windows hosts file to use WSL2 IP...
-   ✅ Updated Windows hosts file with WSL2 IP: 172.22.101.50
+**Note**: Keep this terminal open. Port-forwarding will stop if you close it.
 
-🚀 Starting port-forward on port 80 (requires sudo)...
-   Forwarding 0.0.0.0:80 → ingress-nginx-controller:80
+---
 
-Forwarding from 0.0.0.0:80 -> 80
-```
+## Accessing Services
 
-**Note**: You may see a Windows UAC prompt - click "Yes" to update hosts file.
+Open your Windows browser (Chrome, Firefox, Edge) and navigate to:
 
-### 4. Access Services
-
-Open your **Windows browser** (Chrome, Firefox, Edge):
-
-| Service | URL | Purpose |
-|---------|-----|---------|
-| **Frontend** | http://thesisapp.local | Main web interface |
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Frontend** | http://thesisapp.local | Main web application interface |
 | **Backend API** | http://thesisapp.local/api | REST API endpoints |
-| **Swagger UI** | http://thesisapp.local/api/swagger-ui/index.html | API documentation |
-| **MailHog** | http://mailhog.thesisapp.local | View test emails |
-| **MinIO Console** | http://minio.thesisapp.local | File storage |
+| **Swagger UI** | http://thesisapp.local/api/swagger-ui/index.html | Interactive API documentation |
+| **MailHog** | http://mailhog.thesisapp.local | Email testing interface |
+| **MinIO Console** | http://minio.thesisapp.local | Object storage management |
 
-**Note**: Make sure the port-forward tunnel (`start-tunnel-wsl2.sh`) is running first!
+### Default User Accounts
 
----
-
-## WSL2 Service Access Solutions
-
-### ✅ Recommended: Ingress + Port-Forward (For WSL2 → Windows Browser)
-
-**What is it?**
-- Uses Kubernetes Ingress for routing (production-like)
-- `kubectl port-forward` exposes services on WSL2 IP (reachable from Windows)
-- Access services via clean domains: `http://thesisapp.local`
-
-**How to use:**
-```bash
-# Terminal 1: Start port-forward (keep running)
-./kubernetes/start-tunnel-wsl2.sh
-
-# Terminal 2: Access from Windows browser
-open http://thesisapp.local
-```
-
-**Why this method?**
-- ✅ **Works with WSL2 → Windows browser** (minikube tunnel doesn't)
-- ✅ Clean URLs (no random ports)
-- ✅ Production-like setup (teaches real Kubernetes Ingress)
-- ✅ Single entry point for all services
-- ✅ Path-based routing (`/api` → backend, `/` → frontend)
-- ✅ Automatic Windows hosts file management
-
-**Pros:**
-- ✅ Production-like setup (teaches real Kubernetes)
-- ✅ Clean URLs (no random ports)
-- ✅ Single entry point for all services
-- ✅ Works perfectly from Windows browser
-- ✅ Path-based routing (`/api` → backend, `/` → frontend)
-
-**Cons:**
-- ⚠️ Requires keeping terminal open for port-forward
-- ⚠️ Requires sudo for port 80
-
----
-
-### Alternative: Port-Forwarding (For debugging)
-
-If tunnel isn't working, use port-forwarding:
-
-```bash
-kubectl port-forward -n thesisapp svc/frontend 5173:5173
-kubectl port-forward -n thesisapp svc/backend 8080:8080
-```
-
-Then access at `http://localhost:5173` and `http://localhost:8080`
-
----
-
-## Features
-
-- ✅ Train models with **Weka algorithms** (J48, RandomForest, LinearRegression, etc.)
-- ✅ Upload and train **custom Python algorithms** (Docker-based)
-- ✅ Make predictions on new data
-- ✅ **Automatic categorical target handling** for custom algorithms
-- ✅ View training metrics and visualizations
-- ✅ Share models with other users
-- ✅ **NodePort services** (no port-forwarding needed on native Linux)
-- ✅ **WSL2-optimized** with `minikube service` support
-
----
-
-## Training Models
-
-### Weka Algorithms (Predefined)
-
-```bash
-# 1. Login and get token
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"bigspy","password":"adminPassword"}'
-
-export TOKEN="your_jwt_token_here"
-
-# 2. Train model
-curl -X POST http://localhost:8080/api/train/train-model \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@training_data.csv" \
-  -F "algorithmId=10" \
-  -F "basicCharacteristicsColumns=1,2,3" \
-  -F "targetClassColumn=4"
-
-# 3. Track progress
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/tasks/{taskId}
-
-# 4. Get model ID when completed
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/tasks/{taskId}/model-id
-```
-
-### Custom Python Algorithms
-
-See example in: `backend/src/test/resources/custom_test/customer_purchase_predictor/`
-
-```bash
-# 1. Build Docker image
-cd your_algorithm_directory
-docker build -t my_algo:latest .
-docker save my_algo:latest -o my_algo.tar
-
-# 2. Upload algorithm
-curl -X POST http://localhost:8080/api/algorithms/createCustomAlgorithm \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "name=my_algorithm" \
-  -F "version=1.0.0" \
-  -F "accessibility=PUBLIC" \
-  -F "parametersFile=@parameters.json" \
-  -F "dockerTarFile=@my_algo.tar"
-
-# 3. Train with custom algorithm
-curl -X POST http://localhost:8080/api/train/custom \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "algorithmId=10" \
-  -F "datasetFile=@training_data.csv"
-```
-
----
-
-## Making Predictions
-
-```bash
-# 1. Execute prediction
-curl -X POST http://localhost:8080/api/model-exec/execute \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "modelId=42" \
-  -F "predictionFile=@test_data.csv"
-
-# 2. Get execution ID
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/tasks/{taskId}/execution-id
-
-# 3. Download results
-curl -H "Authorization: Bearer $TOKEN" \
-  -o predictions.csv \
-  http://localhost:8080/api/model-exec/{executionId}/result
-```
+| Username | Password | Role |
+|----------|----------|------|
+| bigspy | adminPassword | ADMIN |
+| johnken | adminPassword | ADMIN |
+| nickriz | userPassword | USER |
 
 ---
 
 ## Testing
 
-### Run Integration Tests
+The application includes integration tests for both Weka and custom algorithm workflows.
+
+### Option 1: Test Through Ingress (Recommended for WSL2)
+
+Requires `start-tunnel-wsl2.sh` to be running.
 
 ```bash
-cd backend
+cd ~/ThesisApp/backend
 
-# Get backend URL (if using minikube service)
+# Test Weka algorithm workflow
+mvn test -Dtest=BasicFullWekaFlowIT \
+  -Dtest.host=http://thesisapp.local \
+  -Dtest.port=80 \
+  -Dtest.basePath=/api
+
+# Test custom algorithm workflow
+mvn test -Dtest=BasicFullCustomFlowIT \
+  -Dtest.host=http://thesisapp.local \
+  -Dtest.port=80 \
+  -Dtest.basePath=/api
+```
+
+### Option 2: Test via Port-Forward
+
+Open a separate terminal:
+
+```bash
+# Terminal 1: Port-forward backend
+kubectl port-forward -n thesisapp svc/backend 8080:8080
+```
+
+Then run tests (Terminal 2):
+
+```bash
+cd ~/ThesisApp/backend
+
+# Tests will use default localhost:8080
+mvn test -Dtest=BasicFullWekaFlowIT
+mvn test -Dtest=BasicFullCustomFlowIT
+```
+
+### Option 3: Test via NodePort
+
+```bash
+cd ~/ThesisApp/backend
+
+# Get NodePort URL
 BACKEND_URL=$(minikube service backend -n thesisapp --url)
 BACKEND_HOST=$(echo $BACKEND_URL | cut -d: -f1-2)
 BACKEND_PORT=$(echo $BACKEND_URL | cut -d: -f3)
@@ -387,117 +358,231 @@ mvn test -Dtest=BasicFullWekaFlowIT \
   -Dtest.port=$BACKEND_PORT
 ```
 
-**Or with port-forwarding:**
-```bash
-# Terminal 1: Port-forward backend
-kubectl port-forward -n thesisapp svc/backend 8080:8080
+### Test Coverage
 
-# Terminal 2: Run test
-mvn test -Dtest=BasicFullWekaFlowIT
+**BasicFullWekaFlowIT**: Tests the complete lifecycle with built-in Weka algorithms:
+- User authentication
+- Dataset upload
+- Model training with Weka algorithm (e.g., LinearRegression)
+- Task monitoring
+- Model prediction
+- Result download
+
+**BasicFullCustomFlowIT**: Tests custom Python algorithm workflows:
+- Custom algorithm upload (Docker image as .tar)
+- Dataset upload
+- Model training with custom algorithm
+- Task monitoring
+- Model prediction
+- Result download
+
+**Note**: Custom algorithm tests take longer (3-5 minutes) due to Docker image loading into Minikube.
+
+---
+
+## API Usage Examples
+
+All examples assume you're using the ingress setup. Replace `http://thesisapp.local` with `http://localhost:8080` if using port-forward.
+
+### Authentication
+
+```bash
+# Login
+curl -X POST http://thesisapp.local/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"bigspy","password":"adminPassword"}'
+
+# Extract token from response
+export TOKEN="your_jwt_token_here"
+```
+
+### Training with Weka Algorithms
+
+```bash
+# 1. Train model with built-in Weka algorithm
+curl -X POST http://thesisapp.local/api/train/train-model \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@training_data.csv" \
+  -F "algorithmId=10" \
+  -F "basicCharacteristicsColumns=1,2,3" \
+  -F "targetClassColumn=4"
+
+# Response contains taskId
+# {"taskId":"abc-123-def","message":"Training started"}
+
+# 2. Monitor training progress
+curl -H "Authorization: Bearer $TOKEN" \
+  http://thesisapp.local/api/tasks/{taskId}
+
+# 3. Get model ID when completed
+curl -H "Authorization: Bearer $TOKEN" \
+  http://thesisapp.local/api/tasks/{taskId}/model-id
+```
+
+### Training with Custom Python Algorithms
+
+See example implementations in: `backend/src/test/resources/custom_test/`
+
+```bash
+# 1. Build Docker image for your algorithm
+cd your_algorithm_directory
+docker build -t my_algorithm:latest .
+docker save my_algorithm:latest -o my_algorithm.tar
+
+# 2. Upload custom algorithm
+curl -X POST http://thesisapp.local/api/algorithms/createCustomAlgorithm \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "name=my_algorithm" \
+  -F "version=1.0.0" \
+  -F "accessibility=PUBLIC" \
+  -F "parametersFile=@parameters.json" \
+  -F "dockerTarFile=@my_algorithm.tar"
+
+# 3. Train with custom algorithm
+curl -X POST http://thesisapp.local/api/train/custom \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "algorithmId={algorithmId}" \
+  -F "datasetFile=@training_data.csv"
+```
+
+**Note**: Docker tar files can be large (200-600MB). Ensure adequate upload timeout and bandwidth.
+
+### Making Predictions
+
+```bash
+# 1. Execute prediction
+curl -X POST http://thesisapp.local/api/model-exec/execute \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "modelId={modelId}" \
+  -F "predictionFile=@test_data.csv"
+
+# Response contains taskId for the prediction job
+
+# 2. Monitor prediction task
+curl -H "Authorization: Bearer $TOKEN" \
+  http://thesisapp.local/api/tasks/{taskId}
+
+# 3. Get execution ID
+curl -H "Authorization: Bearer $TOKEN" \
+  http://thesisapp.local/api/tasks/{taskId}/execution-id
+
+# 4. Download prediction results
+curl -H "Authorization: Bearer $TOKEN" \
+  -o predictions.csv \
+  http://thesisapp.local/api/model-exec/{executionId}/result
 ```
 
 ---
 
-## Troubleshooting (WSL2)
+## Troubleshooting
 
-### Docker Not Starting
+### Cannot Access thesisapp.local from Browser
+
+**Symptoms**: Browser shows "This site can't be reached" or DNS errors.
+
+**Solution**:
+
+1. Verify Windows hosts file entry:
+   - Open `C:\Windows\System32\drivers\etc\hosts`
+   - Ensure entry matches your current WSL2 IP: `172.22.x.x thesisapp.local`
+   - WSL2 IP may change after restarting WSL2
+
+2. Get current WSL2 IP:
+   ```bash
+   hostname -I | awk '{print $1}'
+   ```
+
+3. Update hosts file with current IP if changed
+
+4. Flush Windows DNS cache (CMD as Administrator):
+   ```cmd
+   ipconfig /flushdns
+   ```
+
+5. Verify port-forward is running:
+   - Check terminal running `start-tunnel-wsl2.sh`
+   - Should show: `Forwarding from 0.0.0.0:80 -> 80`
+
+6. Test from WSL2 first:
+   ```bash
+   curl -H "Host: thesisapp.local" http://localhost
+   ```
+   If this returns HTML, the issue is Windows-side (hosts file or DNS cache).
+
+### Pods Stuck in Pending or CrashLoopBackOff
+
+**Symptoms**: Pods don't reach Running state.
+
+**Check pod status**:
+```bash
+kubectl get pods -n thesisapp
+kubectl describe pod -n thesisapp {pod-name}
+kubectl logs -n thesisapp {pod-name}
+```
+
+**Common causes**:
+
+1. **Insufficient resources**: Increase memory/CPU in `.wslconfig`, restart WSL2
+2. **Image pull issues**: Images should use `imagePullPolicy: Never` for local images
+3. **PostgreSQL not ready**: Backend pods wait for database. Give postgres-0 time to initialize.
+4. **PVC issues**: Check persistent volume claims:
+   ```bash
+   kubectl get pvc -n thesisapp
+   ```
+
+### Docker Not Starting in WSL2
 
 ```bash
-# Check status
+# Check Docker status
 sudo service docker status
 
 # Start Docker
 sudo service docker start
 
-# Auto-start on WSL launch (add to ~/.bashrc)
-echo 'sudo service docker start 2>/dev/null' >> ~/.bashrc
+# If permission denied
+sudo usermod -aG docker $USER
+# Then logout/login to WSL2
 ```
 
-### Cannot Access thesisapp.local from Windows Browser
+### Port 80 Permission Denied
 
-**Problem**: Browser shows "This site can't be reached" or "DNS_PROBE_FINISHED_NXDOMAIN"
+**Symptoms**: `start-tunnel-wsl2.sh` fails with "permission denied" on port 80.
 
-**Solution 1: Verify Windows hosts file**
-
-1. Open Notepad as Administrator
-2. Open: `C:\Windows\System32\drivers\etc\hosts`
-3. Verify it contains your **current WSL2 IP**:
-   ```
-   172.22.101.50 thesisapp.local mailhog.thesisapp.local minio.thesisapp.local
-   ```
-4. If IP is wrong (like `192.168.49.2`), delete that line and add correct WSL2 IP
-
-**Find your WSL2 IP:**
-```bash
-hostname -I | awk '{print $1}'
-```
-
-**Solution 2: Flush DNS cache (Windows)**
-
-Open CMD as Administrator:
-```cmd
-ipconfig /flushdns
-```
-
-**Solution 3: Restart port-forward**
-
-Press Ctrl+C on the running `start-tunnel-wsl2.sh` and restart it:
-```bash
-./kubernetes/start-tunnel-wsl2.sh
-```
-
-**Solution 4: Test from WSL2 first**
-
-Verify it works from WSL2:
-```bash
-curl -H "Host: thesisapp.local" http://localhost
-# Should return HTML (HTTP 200)
-```
-
-If this works but Windows browser doesn't, it's a hosts file issue.
-
-### Port Already in Use
-
-```bash
-# Find process using port 8080
-sudo lsof -i :8080
-
-# Kill it
-sudo kill -9 <PID>
-```
+**Solution**: The script uses `sudo` for port 80. Enter your sudo password when prompted.
 
 ### Minikube Won't Start
 
 ```bash
-# Delete and recreate
+# Delete and recreate cluster
 minikube delete
 minikube start --driver=docker --memory=8192 --cpus=4
 ```
 
-### Pods Crashing (OOMKilled)
+### Tests Timeout
 
-Increase WSL2 memory in `C:\Users\YourUsername\.wslconfig`:
+**Symptoms**: Tests fail with "did not reach expected status within timeout".
 
-```ini
-[wsl2]
-memory=20GB
-processors=8
-```
+**Causes**:
+- Custom algorithm tests may take 3-5 minutes due to Docker image loading
+- Backend pods not ready
+- Network connectivity issues
 
-Then restart WSL2 (PowerShell as Admin):
-```powershell
-wsl --shutdown
-```
+**Solutions**:
+- Increase test timeout (already set to 4 minutes for custom tests)
+- Verify backend pods are running: `kubectl get pods -n thesisapp -l app=backend`
+- Check backend logs: `kubectl logs -n thesisapp -l app=backend --tail=50`
 
 ### File Performance Issues
 
-✅ Work in WSL2 filesystem (`~/ThesisApp`), NOT Windows filesystem (`/mnt/c/`)
+**Problem**: Slow builds or file operations.
+
+**Solution**: Always work in WSL2 filesystem (`~/ThesisApp`), NOT Windows filesystem (`/mnt/c/...`).
 
 ```bash
-# BAD (slow):
+# Bad (slow)
 cd /mnt/c/Users/yourname/ThesisApp
 
-# GOOD (fast):
+# Good (fast)
 cd ~/ThesisApp
 ```
 
@@ -508,79 +593,155 @@ cd ~/ThesisApp
 git config --global core.autocrlf input
 git config --global core.eol lf
 
-# Fix existing files
+# Fix existing shell scripts
 sudo apt-get install dos2unix
 find . -name "*.sh" -exec dos2unix {} \;
+chmod +x kubernetes/*.sh
 ```
 
 ---
 
-## API Documentation
+## Configuration Reference
 
-Access Swagger UI at:
-- Port-forward: http://localhost:8080/swagger-ui/index.html
-- Minikube service: Get URL from `minikube service backend --url`
+### Environment Variables (Backend)
 
----
+Configured via `kubernetes/base/backend-deployment-local-final.yaml`:
 
-## Default Test Users
+| Variable | Default | Description |
+|----------|---------|-------------|
+| SPRING_PROFILES_ACTIVE | k8s | Spring Boot profile |
+| POSTGRES_HOST | postgres.thesisapp.svc.cluster.local | PostgreSQL hostname |
+| POSTGRES_PORT | 5432 | PostgreSQL port |
+| MINIO_HOST | minio.thesisapp.svc.cluster.local | MinIO hostname |
+| MINIO_PORT | 9000 | MinIO API port |
+| MAIL_HOST | mailhog.thesisapp.svc.cluster.local | SMTP hostname |
+| RUNNING_IN_K8S | true | Enables Kubernetes Job execution |
 
-| Username | Password | Role |
-|----------|----------|------|
-| bigspy | adminPassword | ADMIN |
-| johnken | adminPassword | ADMIN |
-| nickriz | userPassword | USER |
+### Ingress Configuration
 
----
+File: `kubernetes/base/ingress.yaml`
 
-## MinIO Credentials
+**Key Settings**:
+- `proxy-body-size: 1000m` - Allows uploads up to 1GB (for Docker tar files)
+- `proxy-read-timeout: 600` - 10-minute timeout for long-running operations
+- `proxy-send-timeout: 600` - 10-minute upload timeout
 
-```bash
-# Get credentials
-kubectl get secret minio-secret -n thesisapp -o jsonpath='{.data.access-key}' | base64 -d
-kubectl get secret minio-secret -n thesisapp -o jsonpath='{.data.secret-key}' | base64 -d
-```
+**Routing Rules**:
+- `thesisapp.local/api` → backend:8080
+- `thesisapp.local/` → frontend:5173
+- `mailhog.thesisapp.local` → mailhog:8025
+- `minio.thesisapp.local` → minio-console:9001
+
+### Resource Limits
+
+**Backend**:
+- Requests: 2Gi memory, 1000m CPU
+- Limits: 4Gi memory, 2000m CPU
+
+**Frontend**:
+- Requests: 256Mi memory, 250m CPU
+- Limits: 512Mi memory, 500m CPU
+
+Adjust these in deployment YAML files based on your system capacity.
 
 ---
 
 ## Cleanup
 
+### Stop Services (Preserve Data)
+
 ```bash
-# Delete all resources
+# Stop Minikube (keeps cluster state)
+minikube stop
+```
+
+### Delete All Resources (Removes Data)
+
+```bash
+# Delete application namespace (removes all pods, services, data)
 kubectl delete namespace thesisapp
 
-# Stop Minikube
-minikube stop
-
-# Delete Minikube cluster
+# Delete Minikube cluster entirely
 minikube delete
 ```
 
----
+### Delete Docker Images
 
-## Architecture
+```bash
+# List images
+docker images | grep thesis
 
-```
-┌─────────────────────────────────────────────┐
-│         Frontend (TypeScript)                │
-│         NodePort: 30173                      │
-└──────────────────┬──────────────────────────┘
-                   │ REST API
-┌──────────────────▼──────────────────────────┐
-│      Backend (Spring Boot + Java 21)        │
-│         NodePort: 30080                      │
-│  ┌─────────┐  ┌──────────┐  ┌─────────┐    │
-│  │  Weka   │  │  Custom  │  │  Model  │    │
-│  │Training │  │ Training │  │  Exec   │    │
-│  └─────────┘  └──────────┘  └─────────┘    │
-└───────┬────────────┬───────────┬────────────┘
-        │            │           │
-┌───────▼────┐  ┌────▼─────┐  ┌─▼──────────┐
-│ PostgreSQL │  │  MinIO   │  │   Docker   │
-│  Database  │  │ Storage  │  │   Engine   │
-└────────────┘  └──────────┘  └────────────┘
+# Remove images
+docker rmi thesis-backend:local thesis-frontend:local
 ```
 
 ---
 
-**Happy Machine Learning! 🚀🤖**
+## MinIO Credentials
+
+Default credentials for MinIO console:
+
+```bash
+# Access Key
+kubectl get secret minio-secret -n thesisapp -o jsonpath='{.data.access-key}' | base64 -d
+
+# Secret Key
+kubectl get secret minio-secret -n thesisapp -o jsonpath='{.data.secret-key}' | base64 -d
+```
+
+Default values: `minioadmin` / `minioadmin`
+
+---
+
+## Features
+
+- **Built-in Weka Algorithms**: J48, RandomForest, LinearRegression, Logistic, NaiveBayes, SMO, IBk, and more
+- **Custom Python Algorithms**: Upload Docker images with custom ML implementations
+- **Automatic Data Preprocessing**: Handles categorical features, missing values, normalization
+- **Asynchronous Task Execution**: Long-running training jobs with progress monitoring
+- **Model Persistence**: Trained models stored in MinIO object storage
+- **User Management**: Role-based access control (ADMIN, USER)
+- **Model Sharing**: Share models between users with access control
+- **RESTful API**: Comprehensive API with Swagger documentation
+- **Production-Ready Deployment**: Kubernetes-native with proper ingress, secrets, and persistent storage
+
+---
+
+## Technology Stack
+
+**Backend**:
+- Java 21, Spring Boot 3.x
+- Spring Security with JWT authentication
+- Spring Data JPA with Hibernate
+- Weka ML Library 3.8.6
+- Fabric8 Kubernetes Client
+
+**Frontend**:
+- TypeScript
+- Vite build tool
+- Modern ES6+ features
+
+**Infrastructure**:
+- Kubernetes 1.25+
+- Docker containerization
+- PostgreSQL 15 (database)
+- MinIO (S3-compatible object storage)
+- MailHog (email testing)
+- nginx Ingress Controller
+
+**Development**:
+- Maven (backend build)
+- npm (frontend build)
+- Docker BuildKit
+
+---
+
+## License
+
+This project is submitted as part of a thesis requirement. All rights reserved.
+
+---
+
+## Support
+
+For issues, questions, or contributions, please refer to the project repository or contact the author.
