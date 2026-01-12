@@ -54,6 +54,63 @@ ThesisApp provides a complete environment for:
 
 ## System Architecture
 
+### Network Architecture (WSL2 + Windows)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    Windows Browser                               │
+│                 (Chrome, Firefox, Edge)                          │
+│                                                                  │
+│         Accesses: http://thesisapp.local                         │
+│         Windows hosts: 172.22.x.x thesisapp.local                │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │
+                             │ (HTTP Request)
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                         WSL2 Ubuntu                              │
+│                      IP: 172.22.x.x                              │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  Port Forward (socat)                                  │    │
+│  │  0.0.0.0:80 → 192.168.49.2:80                          │    │
+│  └────────────────────┬───────────────────────────────────┘    │
+│                       │                                         │
+│                       │ WSL2 hosts: 192.168.49.2 thesisapp.local│
+│                       ▼                                         │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              Minikube Cluster                            │  │
+│  │              IP: 192.168.49.2                            │  │
+│  │                                                          │  │
+│  │  ┌────────────────────────────────────────────────┐    │  │
+│  │  │         Nginx Ingress Controller               │    │  │
+│  │  │      Routes by hostname and path               │    │  │
+│  │  └─────────┬────────────────────────────────┬─────┘    │  │
+│  │            │                                │          │  │
+│  │   ┌────────▼────────┐           ┌──────────▼────────┐ │  │
+│  │   │   Frontend      │           │    Backend        │ │  │
+│  │   │  (TypeScript)   │           │  (Spring Boot)    │ │  │
+│  │   │   Port: 5174    │           │   Port: 8080      │ │  │
+│  │   └─────────────────┘           └────────┬──────────┘ │  │
+│  │                                           │            │  │
+│  │       ┌───────────────────────────────────┼─────────┐ │  │
+│  │       │                   │               │         │ │  │
+│  │  ┌────▼─────┐      ┌──────▼──────┐  ┌────▼──────┐  │ │  │
+│  │  │PostgreSQL│      │    MinIO    │  │  MailHog  │  │ │  │
+│  │  │(Database)│      │  (Storage)  │  │  (Email)  │  │ │  │
+│  │  └──────────┘      └──────┬──────┘  └───────────┘  │ │  │
+│  │                           │                         │ │  │
+│  │                   ┌───────▼────────┐                │ │  │
+│  │                   │  Kubernetes    │                │ │  │
+│  │                   │  Jobs/Pods     │                │ │  │
+│  │                   │  (ML Training) │                │ │  │
+│  │                   └────────────────┘                │ │  │
+│  └──────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Application Architecture
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Kubernetes Ingress                        │
@@ -65,7 +122,7 @@ ThesisApp provides a complete environment for:
 ┌──────▼────────┐              ┌───────▼─────────┐
 │   Frontend    │              │    Backend      │
 │  (TypeScript) │              │  (Spring Boot)  │
-│   Port: 5173  │              │   Port: 8080    │
+│   Port: 5174  │              │   Port: 8080    │
 └───────────────┘              └────────┬────────┘
                                         │
                     ┌───────────────────┼─────────────────┐
@@ -94,6 +151,40 @@ ThesisApp provides a complete environment for:
 **Stateful Storage**: PostgreSQL and MinIO use StatefulSets with persistent volumes for data durability.
 
 **Dynamic ML Workloads**: Custom algorithms run as Kubernetes Jobs, providing isolation and resource management.
+
+### Understanding the Network Setup
+
+**What is `thesisapp.local`?**
+
+`thesisapp.local` is a **custom domain name** used for accessing the application through the Kubernetes Ingress Controller.
+
+**Two-Layer DNS Resolution:**
+
+1. **From Windows** (your browser):
+   - Windows hosts file: `172.22.x.x thesisapp.local`
+   - `thesisapp.local` resolves to your **WSL2 IP address**
+   - Requests go to WSL2 on port 80
+
+2. **From WSL2** (internal):
+   - WSL2 hosts file: `192.168.49.2 thesisapp.local`
+   - Port-forward (socat) redirects traffic from WSL2:80 → Minikube:80
+   - Inside Minikube, `thesisapp.local` is handled by the Ingress Controller
+   - Ingress routes requests based on hostname and path
+
+**Why not use `localhost`?**
+
+- `localhost` always points to `127.0.0.1` (loopback)
+- The Ingress Controller needs a **hostname** to route traffic correctly
+- Multiple services (frontend, mailhog, minio) use the **same IP** but **different hostnames**
+- Using custom domains allows proper hostname-based routing
+
+**Example:**
+- `http://thesisapp.local` → Frontend
+- `http://thesisapp.local/api` → Backend
+- `http://mailhog.thesisapp.local` → MailHog
+- `http://minio.thesisapp.local` → MinIO Console
+
+All these resolve to the same IP but route to different services based on the hostname!
 
 ---
 
@@ -273,7 +364,24 @@ cd ~/ThesisApp/kubernetes
 3. Add the line shown by the script (e.g., `172.22.101.50 thesisapp.local mailhog.thesisapp.local minio.thesisapp.local`)
 4. Save and close
 
-**Note**: Keep this terminal open. Port-forwarding will stop if you close it.
+**Understanding the hosts file entry:**
+
+The entry you add maps domain names to your WSL2 IP address. For example:
+
+```
+172.22.101.50 thesisapp.local mailhog.thesisapp.local minio.thesisapp.local
+```
+
+This means:
+- When you type `http://thesisapp.local` in your Windows browser, it resolves to `172.22.101.50` (your WSL2 IP)
+- The request goes to WSL2, which forwards it to Minikube
+- Minikube's Ingress Controller receives the request and routes it based on the hostname
+
+**Important Notes:**
+- The WSL2 IP address (`172.22.x.x`) may **change** after restarting WSL2 or Windows
+- If you can't access the app after a restart, check if the IP changed and update the hosts file
+- To get your current WSL2 IP, run in WSL2 terminal: `hostname -I | awk '{print $1}'`
+- Keep the port-forward terminal open. Port-forwarding will stop if you close it.
 
 ---
 
@@ -296,6 +404,63 @@ Open your Windows browser (Chrome, Firefox, Edge) and navigate to:
 | bigspy | adminPassword | ADMIN |
 | johnken | adminPassword | ADMIN |
 | nickriz | userPassword | USER |
+
+### Accessing PostgreSQL Database
+
+**Important**: PostgreSQL is **NOT** exposed through ingress for security reasons. The database should only be accessed by the backend and for administrative purposes via port-forwarding.
+
+To access PostgreSQL from your local machine (for database management tools like DBeaver, pgAdmin, or psql):
+
+```bash
+# Forward PostgreSQL to local port 15432 (in a separate terminal)
+kubectl port-forward -n thesisapp pod/postgres-0 15432:5432
+```
+
+**Keep this terminal open while accessing the database.**
+
+Now connect using your database client:
+
+| Setting | Value |
+|---------|-------|
+| **Host** | `localhost` (or `127.0.0.1`) |
+| **Port** | `15432` |
+| **Database** | `thesis_db` |
+| **Username** | Get from secret (see below) |
+| **Password** | Get from secret (see below) |
+
+**Get Database Credentials:**
+
+```bash
+# Get username
+kubectl get secret postgres-secret -n thesisapp -o jsonpath='{.data.username}' | base64 -d
+# Output: postgres
+
+# Get password
+kubectl get secret postgres-secret -n thesisapp -o jsonpath='{.data.password}' | base64 -d
+# Output: (your password)
+```
+
+**Using psql (PostgreSQL CLI):**
+
+```bash
+# Install psql (if not already installed)
+sudo apt-get install postgresql-client
+
+# Connect to database (with port-forward running)
+psql -h localhost -p 15432 -U postgres -d thesis_db
+# Enter password when prompted
+
+# Example queries
+\dt                          # List all tables
+\d users                     # Describe users table
+SELECT * FROM users LIMIT 5; # Query users
+\q                           # Quit
+```
+
+**Why is PostgreSQL not in ingress?**
+- **Security**: Databases should never be publicly exposed
+- **Protocol**: Ingress handles HTTP/HTTPS only, PostgreSQL uses a binary protocol
+- **Best Practice**: Only backend services should access the database directly
 
 ---
 
@@ -483,18 +648,18 @@ curl -H "Authorization: Bearer $TOKEN" \
 **Solution**:
 
 1. Verify Windows hosts file entry:
-   - Open `C:\Windows\System32\drivers\etc\hosts`
-   - Ensure entry matches your current WSL2 IP: `172.22.x.x thesisapp.local`
-   - WSL2 IP may change after restarting WSL2
+   - Open `C:\Windows\System32\drivers\etc\hosts` (as Administrator)
+   - Ensure entry matches your current WSL2 IP: `172.22.x.x thesisapp.local mailhog.thesisapp.local minio.thesisapp.local`
+   - **Important**: WSL2 IP may change after restarting WSL2 or Windows!
 
-2. Get current WSL2 IP:
+2. Get current WSL2 IP (from WSL2 terminal):
    ```bash
    hostname -I | awk '{print $1}'
    ```
 
-3. Update hosts file with current IP if changed
+3. Update Windows hosts file with current IP if changed
 
-4. Flush Windows DNS cache (CMD as Administrator):
+4. Flush Windows DNS cache (CMD/PowerShell as Administrator):
    ```cmd
    ipconfig /flushdns
    ```
@@ -508,6 +673,42 @@ curl -H "Authorization: Bearer $TOKEN" \
    curl -H "Host: thesisapp.local" http://localhost
    ```
    If this returns HTML, the issue is Windows-side (hosts file or DNS cache).
+
+### Password Reset Link Not Working
+
+**Symptoms**: Password reset email contains wrong URL or clicking the link doesn't work.
+
+**Common Issues:**
+
+1. **Link shows `localhost:5173` instead of `thesisapp.local`**:
+   - Check `FRONTEND_RESET_PASSWORD_URL` environment variable in `kubernetes/base/backend-deployment-local-final.yaml`
+   - Should be: `http://thesisapp.local/#/reset-password`
+   - Restart backend after changes: `kubectl rollout restart deployment/backend -n thesisapp`
+
+2. **Link shows correct URL but doesn't open**:
+   - Verify Windows hosts file has the entry: `172.22.x.x thesisapp.local`
+   - Check that port-forward (`start-tunnel-wsl2.sh`) is running
+   - Flush DNS cache: `ipconfig /flushdns`
+
+3. **Link opens but shows connection error**:
+   - Ensure WSL2 IP in Windows hosts file is current
+   - Get current IP: `hostname -I | awk '{print $1}'` (in WSL2)
+   - Update Windows hosts file if IP changed
+
+**Verification Steps:**
+
+```bash
+# 1. Check current backend configuration
+kubectl get deployment backend -n thesisapp -o yaml | grep FRONTEND_RESET_PASSWORD_URL -A 1
+
+# 2. Check backend logs for email sending
+kubectl logs -n thesisapp -l app=backend --tail=50 | grep -i "password reset"
+
+# 3. Test password reset flow:
+# - Request reset from http://thesisapp.local
+# - Check email in http://mailhog.thesisapp.local
+# - Verify URL in email matches thesisapp.local
+```
 
 ### Pods Stuck in Pending or CrashLoopBackOff
 
@@ -609,13 +810,46 @@ Configured via `kubernetes/base/backend-deployment-local-final.yaml`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| SPRING_PROFILES_ACTIVE | k8s | Spring Boot profile |
+| SPRING_PROFILES_ACTIVE | k8s | Spring Boot profile (k8s, docker, or local) |
 | POSTGRES_HOST | postgres.thesisapp.svc.cluster.local | PostgreSQL hostname |
 | POSTGRES_PORT | 5432 | PostgreSQL port |
 | MINIO_HOST | minio.thesisapp.svc.cluster.local | MinIO hostname |
 | MINIO_PORT | 9000 | MinIO API port |
-| MAIL_HOST | mailhog.thesisapp.svc.cluster.local | SMTP hostname |
+| MAIL_HOST | mailhog.thesisapp.svc.cluster.local | SMTP hostname (MailHog for testing) |
+| MAIL_PORT | 1025 | SMTP port |
+| FRONTEND_RESET_PASSWORD_URL | http://thesisapp.local/#/reset-password | Password reset link URL in emails |
 | RUNNING_IN_K8S | true | Enables Kubernetes Job execution |
+| K8S_NAMESPACE | thesisapp | Kubernetes namespace for job creation |
+| CORS_ALLOWED_ORIGINS | http://localhost:5173,http://localhost:5174,... | Allowed CORS origins |
+
+### Email Configuration
+
+The backend sends emails for password reset functionality. In Kubernetes deployment, emails are sent to **MailHog** for testing purposes.
+
+**Configuration Files:**
+- `backend/src/main/resources/application-k8s.yaml` - Kubernetes profile config
+- `kubernetes/base/backend-deployment-local-final.yaml` - Environment variables
+
+**Password Reset Email URLs:**
+
+The password reset email contains a link that users click to reset their password. This URL **must match** how you access the application.
+
+| Environment | Configuration | URL in Email |
+|-------------|---------------|--------------|
+| Kubernetes (Ingress) | `FRONTEND_RESET_PASSWORD_URL=http://thesisapp.local/#/reset-password` | `http://thesisapp.local/#/reset-password?token=...` |
+| Docker Compose | Set in `application-docker.yaml` | `http://localhost:5173/#/reset-password?token=...` |
+| Local Dev | Set in `application-local.yaml` | `http://localhost:5174/#/reset-password?token=...` |
+
+**Important**: If you change how you access the application (e.g., different port or domain), you must update the `FRONTEND_RESET_PASSWORD_URL` environment variable in the deployment configuration and restart the backend pods.
+
+**Testing Email Functionality:**
+
+1. Access the application at `http://thesisapp.local`
+2. Click "Forgot Password" and enter a user email
+3. Open MailHog at `http://mailhog.thesisapp.local`
+4. View the password reset email
+5. Click the reset link (should open `http://thesisapp.local/#/reset-password?token=...`)
+6. Enter new password and submit
 
 ### Ingress Configuration
 
@@ -628,9 +862,19 @@ File: `kubernetes/base/ingress.yaml`
 
 **Routing Rules**:
 - `thesisapp.local/api` → backend:8080
-- `thesisapp.local/` → frontend:5173
+- `thesisapp.local/` → frontend:5174
 - `mailhog.thesisapp.local` → mailhog:8025
 - `minio.thesisapp.local` → minio-console:9001
+
+**How Ingress Routing Works:**
+
+The Ingress Controller uses both **hostname** and **path** to route traffic:
+
+1. **Hostname-based routing**: Different hostnames (`thesisapp.local`, `mailhog.thesisapp.local`) route to different services
+2. **Path-based routing**: On `thesisapp.local`, paths starting with `/api` go to backend, all others go to frontend
+3. **Order matters**: `/api` prefix rule is checked before the `/` catch-all rule
+
+This allows multiple services to share the same IP address (WSL2 IP) while maintaining separate access points.
 
 ### Resource Limits
 
