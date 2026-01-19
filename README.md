@@ -464,6 +464,242 @@ SELECT * FROM users LIMIT 5; # Query users
 
 ---
 
+## Cluster Management with k9s
+
+k9s is a powerful terminal-based UI for managing and monitoring your Kubernetes cluster. It provides real-time visualization of cluster resources, making it much easier to debug issues and monitor your ML application.
+
+### Why Use k9s?
+
+- **Real-time monitoring**: Watch pods, deployments, and services update live
+- **Quick debugging**: View logs, describe resources, and exec into containers with single keystrokes
+- **Efficient navigation**: Switch between namespaces and resource types instantly
+- **Resource management**: Delete, edit, scale resources without typing kubectl commands
+- **Visual feedback**: Color-coded status indicators (green=running, yellow=pending, red=errors)
+
+### Installing k9s
+
+```bash
+# Install k9s using webi installer
+curl -sS https://webi.sh/k9s | sh
+
+# Add k9s to PATH
+echo 'source ~/.config/envman/load.sh' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify installation
+k9s version
+```
+
+### Starting k9s
+
+```bash
+# Launch k9s (starts in default namespace)
+k9s
+
+# Launch k9s in your application namespace
+k9s -n thesisapp
+
+# Launch k9s showing all namespaces
+k9s -A
+```
+
+### Essential Keyboard Shortcuts
+
+#### Navigation and Views
+| Shortcut | Action |
+|----------|--------|
+| `:` | Enter command mode (type resource name like `pods`, `deploy`, `svc`) |
+| `:q` or `Ctrl+c` | Quit k9s |
+| `?` | Show all keyboard shortcuts |
+| `Esc` | Go back / Cancel current action |
+| `0` | Toggle showing all namespaces |
+| `Ctrl+a` | Show all available resources |
+
+#### Common Resource Views
+| Command | Description |
+|---------|-------------|
+| `:pod` or `:po` | View pods |
+| `:deploy` | View deployments |
+| `:svc` | View services |
+| `:ing` | View ingress rules |
+| `:job` | View jobs (ML training tasks) |
+| `:sts` | View StatefulSets (postgres, minio) |
+| `:pvc` | View persistent volume claims |
+| `:ns` | View/switch namespaces |
+| `:secret` | View secrets |
+| `:cm` | View ConfigMaps |
+
+#### Resource Actions
+| Shortcut | Action |
+|----------|--------|
+| `Enter` | View selected resource details |
+| `d` | Describe selected resource (detailed info) |
+| `l` | View logs for selected pod |
+| `Shift+f` | Port-forward to selected pod/service |
+| `s` | Shell into selected pod (exec) |
+| `e` | Edit selected resource (YAML) |
+| `Ctrl+d` | Delete selected resource (confirmation required) |
+| `Ctrl+k` | Kill selected pod (force delete) |
+| `y` | View YAML definition |
+
+#### Navigation Within Views
+| Shortcut | Action |
+|----------|--------|
+| `↑` `↓` or `j` `k` | Navigate up/down |
+| `g` | Go to top |
+| `Shift+g` | Go to bottom |
+| `/` | Filter resources (type to search) |
+| `Esc` | Clear filter |
+
+#### Advanced Features
+| Shortcut | Action |
+|----------|--------|
+| `Shift+p` | Toggle port-forwarding |
+| `Ctrl+z` | Show previous screen |
+| `Shift+c` | Sort by CPU usage |
+| `Shift+m` | Sort by memory usage |
+| `Shift+r` | Refresh/reload view |
+| `u` | Show resource usage (CPU/Memory) |
+
+### Common k9s Workflows for ThesisApp
+
+#### 1. Monitor Application Health
+```bash
+# Start k9s in thesisapp namespace
+k9s -n thesisapp
+
+# View all pods (default view)
+# Look for:
+# - backend (should have 2 replicas running)
+# - frontend (should have 2 replicas running)
+# - postgres-0 (StatefulSet)
+# - minio-0 (StatefulSet)
+# - mailhog (single pod)
+```
+
+#### 2. Check ML Training Jobs
+```bash
+# In k9s, type:
+:job
+
+# You'll see Kubernetes Jobs created for ML training
+# Jobs are named: train-<model-id>-<random>
+# Status colors:
+# - Green: Completed successfully
+# - Yellow: Running
+# - Red: Failed
+```
+
+#### 3. View Application Logs
+```bash
+# In k9s, navigate to pods view (:pod)
+# Use arrow keys to select a pod (e.g., backend-xxx)
+# Press 'l' to view logs
+# Press '0' to see logs from all containers in pod
+# Press '1', '2', etc. to switch between containers
+# Press 's' to toggle auto-scroll
+# Press 'w' to toggle line wrap
+```
+
+#### 4. Debug Backend Issues
+```bash
+# View backend pods
+:pod
+# Filter for backend: type /backend then Enter
+# Select a backend pod
+# Press 'd' to describe (check events, restarts)
+# Press 'l' to view logs
+# Press 's' to shell into the pod
+```
+
+#### 5. Check Database Status
+```bash
+# View postgres pod
+:pod
+# Type /postgres to filter
+# Select postgres-0
+# Press 'l' to view logs
+# Press 's' to shell into pod
+# Inside shell: psql -U postgres -d thesis_db
+```
+
+#### 6. Monitor Resource Usage
+```bash
+# In any resource view
+# Press 'u' to show CPU/Memory usage
+# Press Shift+c to sort by CPU
+# Press Shift+m to sort by memory
+# Great for identifying resource-hungry ML training jobs
+```
+
+#### 7. Scale Deployments
+```bash
+# View deployments
+:deploy
+# Select backend or frontend
+# Press 's' to scale
+# Enter desired number of replicas
+# Press Enter to confirm
+```
+
+#### 8. Quick Port-Forward
+```bash
+# Navigate to services (:svc)
+# Select a service (e.g., backend)
+# Press Shift+f
+# Enter local port (e.g., 8080)
+# Press Enter
+# Service is now accessible at localhost:8080
+```
+
+### Tips for Effective k9s Usage
+
+1. **Keep k9s Running**: Open k9s in a dedicated terminal window for continuous monitoring
+2. **Use Filters**: Press `/` and type keywords to quickly find resources
+3. **Watch Training Jobs**: Use `:job` view to monitor ML model training progress
+4. **Check Events**: Press `d` on any resource to see recent events and errors
+5. **Namespace Context**: Start with `k9s -n thesisapp` to focus on your application
+6. **Learn Shortcuts**: Press `?` anytime to see available shortcuts for current view
+7. **Multiple Terminals**: Run k9s alongside other terminals for kubectl commands
+8. **Resource Cleanup**: Use k9s to quickly identify and delete old completed Jobs
+
+### k9s vs kubectl
+
+| Task | kubectl Command | k9s Shortcut |
+|------|----------------|--------------|
+| List pods | `kubectl get pods -n thesisapp` | `:pod` (from any view) |
+| View logs | `kubectl logs -n thesisapp pod-name` | Select pod → `l` |
+| Describe pod | `kubectl describe pod -n thesisapp pod-name` | Select pod → `d` |
+| Delete pod | `kubectl delete pod -n thesisapp pod-name` | Select pod → `Ctrl+d` |
+| Shell into pod | `kubectl exec -it pod-name -n thesisapp -- /bin/bash` | Select pod → `s` |
+| Port-forward | `kubectl port-forward svc/backend 8080:8080 -n thesisapp` | Select service → `Shift+f` |
+| View YAML | `kubectl get pod pod-name -n thesisapp -o yaml` | Select pod → `y` |
+
+### Troubleshooting with k9s
+
+**Pod Stuck in Pending**:
+- Select pod → Press `d` to describe
+- Look for events at bottom of screen
+- Common issues: Insufficient resources, PVC not bound
+
+**CrashLoopBackOff**:
+- Select pod → Press `l` to view logs
+- Look for error messages
+- Press `d` to see restart count and recent events
+
+**Service Not Responding**:
+- Check pod status first (`:pod`)
+- Verify service endpoints (`:svc` → Select service → `d`)
+- Check ingress rules (`:ing`)
+
+**Training Job Failed**:
+- View jobs (`:job`)
+- Select failed job → Press `d` for events
+- Find the job pod (`:pod` and filter by job name)
+- View pod logs (`l`) for error details
+
+---
+
 ## Testing
 
 The application includes integration tests for both Weka and custom algorithm workflows.
