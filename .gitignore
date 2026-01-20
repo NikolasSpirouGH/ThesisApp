@@ -55,6 +55,7 @@ desktop.ini
 
 .env
 .env.*
+.venv
 *.local
 
 # =========================

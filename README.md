@@ -824,29 +824,854 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 See example implementations in: `backend/src/test/resources/custom_test/`
 
+#### Phase 1: Create Custom Algorithm (One-Time)
+
+Users can provide the Docker image in **TWO ways**:
+
+**Option A: Upload Docker TAR file**
 ```bash
-# 1. Build Docker image for your algorithm
+# 1. Build and save Docker image
 cd your_algorithm_directory
 docker build -t my_algorithm:latest .
 docker save my_algorithm:latest -o my_algorithm.tar
 
-# 2. Upload custom algorithm
+# 2. Create algorithm with TAR file
 curl -X POST http://thesisapp.local/api/algorithms/createCustomAlgorithm \
   -H "Authorization: Bearer $TOKEN" \
   -F "name=my_algorithm" \
   -F "version=1.0.0" \
   -F "accessibility=PUBLIC" \
+  -F "keywords=classification,custom" \
+  -F "description=My custom logistic regression" \
   -F "parametersFile=@parameters.json" \
   -F "dockerTarFile=@my_algorithm.tar"
+```
 
-# 3. Train with custom algorithm
+**Option B: Use Docker Hub URL**
+```bash
+# 1. Push to Docker Hub
+docker tag my_algorithm:latest myusername/my_algorithm:latest
+docker push myusername/my_algorithm:latest
+
+# 2. Create algorithm with Docker Hub URL
+curl -X POST http://thesisapp.local/api/algorithms/createCustomAlgorithm \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "name=my_algorithm" \
+  -F "version=1.0.0" \
+  -F "accessibility=PUBLIC" \
+  -F "keywords=classification,custom" \
+  -F "description=My custom logistic regression" \
+  -F "parametersFile=@parameters.json" \
+  -F "dockerHubUrl=docker.io/myusername/my_algorithm:latest"
+```
+
+**Important Notes**:
+- `parametersFile`: Defines **DEFAULT** parameters for the algorithm (required)
+- Choose **EITHER** `dockerTarFile` **OR** `dockerHubUrl` (not both)
+- TAR files can be large (200-600MB) - ensure adequate upload timeout
+- Docker Hub images must be public (or cluster must have pull credentials)
+
+#### Phase 2: Train with Custom Algorithm (Can Repeat Many Times)
+
+```bash
+# Train using the algorithm's default parameters
 curl -X POST http://thesisapp.local/api/train/custom \
   -H "Authorization: Bearer $TOKEN" \
   -F "algorithmId={algorithmId}" \
   -F "datasetFile=@training_data.csv"
+
+# OR: Train with custom parameters (overrides defaults)
+curl -X POST http://thesisapp.local/api/train/custom \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "algorithmId={algorithmId}" \
+  -F "datasetFile=@training_data.csv" \
+  -F "parametersFile=@custom_params.json"
 ```
 
-**Note**: Docker tar files can be large (200-600MB). Ensure adequate upload timeout and bandwidth.
+**Parameters in Training**:
+- `algorithmId`: References algorithm created in Phase 1 (required)
+- `datasetFile`: Training dataset CSV/ARFF/XLSX (required)
+- `parametersFile`: **OPTIONAL** - overrides default parameters for this training run
+  - If omitted: Uses defaults from algorithm creation
+  - If provided: Merges with defaults (custom values override defaults)
+- `basicAttributesColumns`: Optional feature column selection
+- `targetColumn`: Optional target column specification (defaults to last column)
+
+**Parameter Override Example**:
+```json
+// Algorithm creation (parameters.json):
+[
+  {"name": "learning_rate", "value": "0.01"},
+  {"name": "n_epochs", "value": "1000"}
+]
+
+// Training with override (custom_params.json):
+{
+  "learning_rate": 0.05,
+  "n_epochs": 500
+}
+
+// Final merged parameters used:
+{
+  "learning_rate": 0.05,    // Overridden
+  "n_epochs": 500           // Overridden
+}
+```
+
+---
+
+## Custom Algorithm Architecture
+
+### Overview
+
+The application supports custom Python ML algorithms through a containerized execution system. Users provide their algorithm implementation, and the platform handles data preprocessing, training execution, and prediction workflows automatically.
+
+### How It Works
+
+```
+┌─────────────┐
+│   User      │
+│  Uploads    │
+└──────┬──────┘
+       │
+       ├─► algorithm.py      (ML implementation)
+       ├─► Dockerfile        (Container definition)
+       ├─► requirements.txt  (Python dependencies)
+       ├─► parameters.json   (Configurable params)
+       └─► *.tar            (Docker image)
+              │
+              ▼
+┌──────────────────────────────────────────────┐
+│          Backend Service                      │
+│  ┌──────────────────────────────────────┐   │
+│  │ 1. Loads Docker image to cluster      │   │
+│  │ 2. Downloads dataset from MinIO       │   │
+│  │ 3. Converts categorical → numeric     │   │
+│  │ 4. Injects train.py template          │   │
+│  │ 5. Extracts user's algorithm.py       │   │
+│  └──────────────┬───────────────────────┘   │
+└─────────────────┼───────────────────────────┘
+                  ▼
+┌──────────────────────────────────────────────┐
+│   Container Runner (Docker/K8s)               │
+│  ┌────────────────────────────────────────┐  │
+│  │  Shared Volume Mount                   │  │
+│  │  ├─ /data/                             │  │
+│  │  │  ├─ dataset.csv                     │  │
+│  │  │  ├─ params.json                     │  │
+│  │  │  ├─ train.py (platform template)    │  │
+│  │  │  └─ algorithm.py (user code)        │  │
+│  │  └─ /model/ (output)                   │  │
+│  │     ├─ trained_model.pkl               │  │
+│  │     ├─ metrics.json                    │  │
+│  │     ├─ label_mapping.json (optional)   │  │
+│  │     └─ feature_columns.json (optional) │  │
+│  └────────────────────────────────────────┘  │
+└──────────────────┬───────────────────────────┘
+                   ▼
+         ┌──────────────────┐
+         │  Upload to MinIO  │
+         └──────────────────┘
+```
+
+### Python Templates
+
+The platform provides two standardized Python templates that bridge user algorithms with the system:
+
+#### 1. `train.py` - Training Template
+
+**Location**: `backend/src/main/resources/templates/train.py`
+
+**Responsibilities**:
+- Loads dataset from `/data/dataset.csv`
+- Reads parameters from `/data/params.json`
+- **Automatically handles categorical data**:
+  - Features: One-hot encoding (e.g., `color=red` → `color_red=1, color_blue=0`)
+  - Target: Label encoding (e.g., `spam/ham` → `0/1` with mapping file)
+- Imports user's `algorithm.py`
+- Calls `Algorithm.fit(X, y)` with pure numeric data
+- Saves trained model to `/model/trained_model.pkl`
+- Generates required output files
+
+**Key Feature - Automatic Data Conversion**:
+```python
+# train.py handles this automatically:
+# Input CSV:  color,size,animal
+#             red,large,dog
+#             blue,small,cat
+#
+# Becomes:    color_red,color_blue,size_large,size_small,animal
+#             1,0,1,0,0
+#             0,1,0,1,1
+#
+# User's algorithm receives pure numeric arrays!
+```
+
+**Generated Artifacts**:
+- `trained_model.pkl` - Serialized model (required)
+- `metrics.json` - Training metrics (required)
+- `label_mapping.json` - Categorical target mapping (auto-generated if needed)
+- `feature_columns.json` - Feature names after encoding (auto-generated if categorical features exist)
+
+#### 2. `predict.py` - Prediction Template
+
+**Location**: `backend/src/main/resources/templates/predict.py`
+
+**Responsibilities**:
+- Loads trained model from `/model/trained_model.pkl`
+- Loads prediction dataset from `/data/test_data.csv`
+- **Applies same categorical encoding as training**:
+  - Uses `feature_columns.json` to ensure identical feature order
+  - Adds missing columns (zero-filled)
+  - Removes extra columns
+- Calls `Algorithm.predict(X)` with transformed data
+- **Converts numeric predictions back to original labels** (if `label_mapping.json` exists)
+- Saves results to `/model/predictions.csv`
+
+**Key Feature - Consistent Encoding**:
+```python
+# predict.py ensures predictions match training:
+# Training had: color_red,color_blue,size_large,size_small
+#
+# New prediction data with "green" color?
+# → Automatically adds color_green=0 (unseen during training)
+# → Reorders columns to match training exactly
+#
+# Numeric prediction: 1
+# → Converts back using label_mapping.json: "spam"
+```
+
+### Workflow Summary
+
+| Phase | What You Do Locally | What You Upload to Platform |
+|-------|---------------------|----------------------------|
+| **Build** | 1. Write `algorithm.py`<br>2. Create `Dockerfile`<br>3. Create `requirements.txt`<br>4. Run `docker build`<br>5. Run `docker save` (if using TAR) | ❌ Nothing yet |
+| **Create Algorithm** | Already built image | ✅ `my_algorithm.tar` OR Docker Hub URL<br>✅ `parameters.json` (defaults) |
+| **Train** | Prepare training dataset | ✅ `datasetFile` (CSV/ARFF/XLSX)<br>✅ `parametersFile` (optional overrides) |
+| **Predict** | Prepare test dataset | ✅ `predictionFile` (CSV) |
+
+**Key Point**: You build the Docker image locally (which packages algorithm.py, requirements, etc.), then upload ONLY the final image (as TAR or via Docker Hub) + parameters.json.
+
+---
+
+### What You Actually Upload
+
+When creating a custom algorithm, you upload:
+
+1. **Docker Image** (choose ONE option):
+   - **Option A**: `my_algorithm.tar` (built with `docker save`)
+   - **Option B**: Docker Hub URL (e.g., `docker.io/username/my_algorithm:latest`)
+
+2. **parameters.json** - Configuration file defining default parameters
+
+**That's it!** You do NOT upload Dockerfile, algorithm.py, or requirements.txt separately - they're already packaged inside the Docker image.
+
+---
+
+### Building Your Custom Algorithm Locally
+
+**Step 1: Create your files locally**
+
+Your local directory structure:
+```
+my_algorithm/
+├── algorithm.py          # Your ML implementation
+├── requirements.txt      # Python dependencies
+├── Dockerfile           # Build instructions
+└── parameters.json      # Will be uploaded separately
+```
+
+**Step 2: Build Docker image**
+```bash
+cd my_algorithm/
+docker build -t my_algorithm:latest .
+```
+
+**Step 3: Save as TAR (if using Option A)**
+```bash
+docker save my_algorithm:latest -o my_algorithm.tar
+```
+
+**Step 4: Upload to platform**
+- Upload `my_algorithm.tar` OR provide Docker Hub URL
+- Upload `parameters.json`
+
+---
+
+### Requirements for Your Docker Image
+
+Here's what your Docker image must contain:
+
+#### 1. **algorithm.py** (Required - Must be in Docker image at `/app/algorithm.py`)
+
+Your algorithm implementation must follow this interface:
+
+```python
+import numpy as np
+
+class Algorithm:
+    def __init__(self, params: dict):
+        """
+        Initialize algorithm with parameters from params.json
+
+        Args:
+            params: Dictionary of parameters (e.g., {"learning_rate": 0.01})
+        """
+        self.learning_rate = float(params.get("learning_rate", 0.01))
+        self.n_epochs = int(params.get("n_epochs", 100))
+        # ... initialize your model
+
+    def fit(self, X, y):
+        """
+        Train the model
+
+        Args:
+            X: numpy array of shape (n_samples, n_features)
+               - ALL NUMERIC (categorical already encoded)
+            y: numpy array of shape (n_samples,)
+               - ALL NUMERIC (0, 1, 2... if originally categorical)
+
+        Note: You receive PURE NUMERIC data. Platform handles conversion.
+        """
+        # Your training logic here
+        print(f"Training on {X.shape[0]} samples with {X.shape[1]} features")
+        # ...
+
+    def predict(self, X):
+        """
+        Make predictions
+
+        Args:
+            X: numpy array of shape (n_samples, n_features)
+               - Same encoding as training data
+
+        Returns:
+            numpy array of predictions (numeric: 0, 1, 2...)
+            - Platform converts back to original labels automatically
+        """
+        # Your prediction logic here
+        return predictions  # Return numeric array
+```
+
+**Important Notes**:
+- ✅ You receive pure numeric data - no need to handle categorical encoding
+- ✅ Return numeric predictions - platform converts back to original labels
+- ✅ Use standard pickle-compatible objects (numpy, scikit-learn compatible)
+- ❌ Don't manually encode/decode categorical data
+- ❌ Don't use GPU-only libraries unless your Docker image includes GPU support
+
+#### 2. **Dockerfile** (Used locally to build your image)
+
+**Example Dockerfile** (you use this to build locally):
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy algorithm implementation to /app/algorithm.py
+# IMPORTANT: Must be at /app/algorithm.py (platform extracts from this path)
+COPY algorithm.py .
+
+# IMPORTANT: Do NOT specify CMD/ENTRYPOINT for train/predict
+# The platform will inject train.py/predict.py automatically
+```
+
+**Then build and save**:
+```bash
+docker build -t my_algorithm:latest .
+docker save my_algorithm:latest -o my_algorithm.tar
+```
+
+**Important**:
+- ✅ `algorithm.py` must be at `/app/algorithm.py` inside the image
+- ✅ Use official Python base images (3.9+)
+- ✅ Keep images small (use `-slim` variants)
+- ✅ Pin dependency versions in requirements.txt
+- ❌ Don't add ENTRYPOINT/CMD (platform controls execution)
+- ❌ Don't hardcode file paths (use environment variables `DATA_DIR`, `MODEL_DIR`)
+
+#### 3. **requirements.txt** (Used locally during Docker build)
+
+**Example** (used by your Dockerfile):
+
+```
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+# Add your dependencies here
+```
+
+**Required packages**:
+- `numpy` - For array operations
+- `pandas` - For data loading (used by platform's train.py/predict.py templates)
+
+**Optional packages**:
+- `scikit-learn` - For ML utilities
+- `scipy` - For scientific computing
+- Custom ML libraries (ensure compatibility)
+
+**Note**: These get installed INSIDE your Docker image during build. You don't upload this file separately.
+
+#### 4. **parameters.json** (Required for Algorithm Creation)
+
+Defines **DEFAULT** configurable hyperparameters for the algorithm.
+
+**Format for Algorithm Creation** (array of parameter definitions):
+
+```json
+[
+  {
+    "name": "learning_rate",
+    "type": "DOUBLE",
+    "description": "Step size for gradient descent",
+    "value": "0.01",
+    "range": "0.001-1.0"
+  },
+  {
+    "name": "n_epochs",
+    "type": "INTEGER",
+    "description": "Number of training iterations",
+    "value": "1000",
+    "range": "10-10000"
+  },
+  {
+    "name": "regularization",
+    "type": "BOOLEAN",
+    "description": "Enable L2 regularization",
+    "value": "true"
+  }
+]
+```
+
+**Parameter Types**:
+- `DOUBLE` - Floating point numbers
+- `INTEGER` - Whole numbers
+- `BOOLEAN` - true/false
+- `STRING` - Text values
+
+**Format for Training Override** (optional, simple key-value):
+
+```json
+{
+  "learning_rate": 0.05,
+  "n_epochs": 500,
+  "regularization": false
+}
+```
+
+**Two Use Cases**:
+1. **Algorithm Creation**: Defines defaults (array format with metadata)
+2. **Training Time**: Overrides defaults (simple object format)
+
+#### 5. **Dataset Format Requirements**
+
+When you upload datasets for training/prediction, they must follow these formats:
+
+**Training Data Format** (uploaded during training, not algorithm creation):
+```csv
+feature1,feature2,categorical_feature,target
+1.5,2.3,red,positive
+3.2,1.1,blue,negative
+...
+```
+
+**Rules**:
+- Last column = target variable
+- All other columns = features
+- Can mix numeric and categorical columns
+- Platform handles categorical conversion automatically
+
+**Prediction Data Format**:
+```csv
+feature1,feature2,categorical_feature
+1.8,2.1,red
+2.9,1.5,green
+...
+```
+
+**Rules**:
+- Same features as training (order doesn't matter)
+- No target column
+- New categorical values are handled (zero-filled)
+
+### Container Execution
+
+The platform supports two execution modes, selected via `CONTAINER_RUNNER` environment variable:
+
+#### Docker Mode (`docker`)
+
+**Used for**: Docker Compose deployments
+
+**How it works**:
+```
+Backend Container
+  │
+  ├─ Mounts /var/run/docker.sock
+  ├─ Creates temp directories in /app/shared
+  │  ├─ training-ds-XXXXX/  (input data)
+  │  └─ training-out-XXXXX/ (output models)
+  │
+  └─ Runs Docker container:
+     docker run --rm \
+       -v /app/shared/training-ds-XXXXX:/data \
+       -v /app/shared/training-out-XXXXX:/model \
+       -e DATA_DIR=/data \
+       -e MODEL_DIR=/model \
+       user/algorithm:latest \
+       python /data/train.py
+```
+
+**Benefits**:
+- Faster startup (no Kubernetes overhead)
+- Simpler for local development
+- Direct Docker API access
+
+**Limitations**:
+- Requires Docker socket access
+- Less isolation than Kubernetes
+- No resource quotas
+
+#### Kubernetes Mode (`kubernetes`)
+
+**Used for**: Production Kubernetes deployments
+
+**How it works**:
+```
+Backend Pod
+  │
+  ├─ Mounts shared PVC at /app/shared
+  ├─ Creates temp directories in PVC
+  │  ├─ training-ds-XXXXX/
+  │  └─ training-out-XXXXX/
+  │
+  └─ Creates Kubernetes Job:
+     apiVersion: batch/v1
+     kind: Job
+     metadata:
+       name: training-1234567890
+     spec:
+       template:
+         spec:
+           containers:
+           - name: trainer
+             image: user/algorithm:latest
+             command: ["sh", "-c", "python /shared/.../train.py"]
+             env:
+             - name: DATA_DIR
+               value: "/shared/training-ds-XXXXX"
+             - name: MODEL_DIR
+               value: "/shared/training-out-XXXXX"
+             volumeMounts:
+             - name: shared-storage
+               mountPath: /shared
+           volumes:
+           - name: shared-storage
+             persistentVolumeClaim:
+               claimName: shared-pvc
+           restartPolicy: Never
+       backoffLimit: 0
+       ttlSecondsAfterFinished: 300
+```
+
+**Benefits**:
+- Better isolation (separate pods)
+- Resource quotas (memory/CPU limits)
+- Auto-cleanup (TTL after completion)
+- Scales horizontally
+- Production-grade orchestration
+
+**Features**:
+- **Shared PVC**: `shared-pvc` mounted at `/shared` on all pods
+- **Resource Limits**: 2Gi memory limit per training job
+- **Auto-cleanup**: Jobs deleted 5 minutes after completion
+- **No Retries**: `backoffLimit: 0` prevents infinite loops on failure
+- **Log Streaming**: Real-time logs via Kubernetes API
+
+**Configuration**:
+```yaml
+# kubernetes/backend-deployment.yaml
+env:
+- name: CONTAINER_RUNNER
+  value: "kubernetes"  # or "docker"
+- name: K8S_NAMESPACE
+  value: "thesisapp"
+- name: K8S_SHARED_PVC
+  value: "shared-pvc"
+- name: SHARED_VOLUME
+  value: "/app/shared"
+```
+
+### Complete Examples
+
+#### Example 1: Email Spam Classifier (Binary Classification)
+
+**Step 1: Create files locally**
+
+Create directory: `email_spam_classifier/`
+
+**File: algorithm.py**
+```python
+import numpy as np
+
+class Algorithm:
+    def __init__(self, params: dict):
+        self.learning_rate = float(params.get("learning_rate", 0.01))
+        self.n_epochs = int(params.get("n_epochs", 1000))
+        self.weights = None
+        self.bias = None
+        self.mean = None
+        self.std = None
+
+    def _sigmoid(self, z):
+        return 1 / (1 + np.exp(-np.clip(z, -500, 500)))
+
+    def fit(self, X, y):
+        X = np.array(X)
+        y = np.array(y)
+
+        # Normalize
+        self.mean = X.mean(axis=0)
+        self.std = X.std(axis=0) + 1e-8
+        X = (X - self.mean) / self.std
+
+        # Initialize
+        n_samples, n_features = X.shape
+        self.weights = np.zeros(n_features)
+        self.bias = 0
+
+        # Gradient descent
+        for epoch in range(self.n_epochs):
+            linear_model = np.dot(X, self.weights) + self.bias
+            y_predicted = self._sigmoid(linear_model)
+
+            dw = (1 / n_samples) * np.dot(X.T, (y_predicted - y))
+            db = (1 / n_samples) * np.sum(y_predicted - y)
+
+            self.weights -= self.learning_rate * dw
+            self.bias -= self.learning_rate * db
+
+    def predict(self, X):
+        X = np.array(X)
+        X = (X - self.mean) / self.std
+        linear_model = np.dot(X, self.weights) + self.bias
+        y_predicted = self._sigmoid(linear_model)
+        return (y_predicted > 0.5).astype(int)
+```
+
+**Training Data** (`training_data.csv`):
+```csv
+word_count,contains_money,contains_free,exclamation_marks,link_count,class
+50,0,0,0,1,ham
+120,1,1,5,3,spam
+45,0,0,1,0,ham
+200,1,1,8,5,spam
+```
+
+**Prediction Data** (`prediction_data.csv`):
+```csv
+word_count,contains_money,contains_free,exclamation_marks,link_count
+55,0,0,0,1
+180,1,1,7,5
+```
+
+**Expected Output**:
+```csv
+word_count,contains_money,contains_free,exclamation_marks,link_count,prediction
+55,0,0,0,1,ham
+180,1,1,7,5,spam
+```
+
+#### Example 2: Animal Classifier (Multi-class with Categorical Features)
+
+**Training Data** (`training_data.csv`):
+```csv
+color,size,weight,legs,type
+brown,large,500,4,mammal
+yellow,small,0.5,2,bird
+green,small,2,4,reptile
+brown,medium,80,4,mammal
+```
+
+**What Happens**:
+1. Platform encodes categorical features:
+   ```
+   color_brown,color_yellow,color_green,size_large,size_medium,size_small,weight,legs,type
+   1,0,0,1,0,0,500,4,0
+   0,1,0,0,0,1,0.5,2,1
+   0,0,1,0,0,1,2,4,2
+   1,0,0,0,1,0,80,4,0
+   ```
+
+2. Your algorithm receives pure numeric data
+3. Saves `label_mapping.json`: `["mammal", "bird", "reptile"]`
+4. Saves `feature_columns.json`: `["color_brown", "color_yellow", ...]`
+
+**Prediction Data**:
+```csv
+color,size,weight,legs
+brown,large,520,4
+blue,tiny,0.3,2
+```
+
+**What Happens**:
+1. Platform applies same encoding
+2. New values (`blue`, `tiny`) → zero-filled columns
+3. Predictions: `[0, 1]` (numeric)
+4. Platform converts back: `["mammal", "bird"]` (using label_mapping.json)
+
+**Expected Output**:
+```csv
+color,size,weight,legs,prediction
+brown,large,520,4,mammal
+blue,tiny,0.3,2,bird
+```
+
+### Data Flow Diagram
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ 1. Upload Phase                                          │
+│ ────────────────────────────────────────────────────────│
+│ User → API → MinIO                                       │
+│   • algorithm.tar → algorithms bucket                    │
+│   • training_data.csv → datasets bucket                  │
+│   • parameters.json → parameters bucket                  │
+└──────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│ 2. Training Preparation                                  │
+│ ────────────────────────────────────────────────────────│
+│ CustomTrainingService:                                   │
+│   • Load Docker image from tar                           │
+│   • Download dataset from MinIO                          │
+│   • Convert categorical → numeric                        │
+│   • Create /data/ with:                                  │
+│     - dataset.csv (encoded)                              │
+│     - params.json                                        │
+│     - train.py (template)                                │
+│     - algorithm.py (extracted from Docker image)         │
+│   • Create /model/ (empty, for output)                   │
+└──────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│ 3. Container Execution                                    │
+│ ────────────────────────────────────────────────────────│
+│ ContainerRunner (Docker or Kubernetes):                  │
+│   • Mount /data/ → /shared/training-ds-XXX               │
+│   • Mount /model/ → /shared/training-out-XXX             │
+│   • Run: python /data/train.py                           │
+│                                                           │
+│ Inside Container:                                         │
+│   train.py:                                              │
+│     1. Load dataset.csv                                  │
+│     2. Load params.json                                  │
+│     3. Import algorithm.py                               │
+│     4. Call Algorithm.fit(X, y)                          │
+│     5. Save trained_model.pkl                            │
+│     6. Save metrics.json                                 │
+│     7. Save label_mapping.json (if categorical target)   │
+│     8. Save feature_columns.json (if categorical features)│
+└──────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│ 4. Result Collection                                      │
+│ ────────────────────────────────────────────────────────│
+│ CustomTrainingService:                                   │
+│   • Read from /model/:                                   │
+│     - trained_model.pkl                                  │
+│     - metrics.json                                       │
+│     - label_mapping.json (optional)                      │
+│     - feature_columns.json (optional)                    │
+│   • Upload to MinIO:                                     │
+│     - models/{username}_{timestamp}/trained_model.pkl    │
+│     - models/{username}_{timestamp}/label_mapping.json   │
+│     - models/{username}_{timestamp}/feature_columns.json │
+│     - metrics/{username}_{timestamp}_metrics.json        │
+│   • Save Model entity in PostgreSQL                      │
+│   • Update Training status → COMPLETED                   │
+│   • Update AsyncTask status → COMPLETED                  │
+└──────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│ 5. Prediction Phase                                       │
+│ ────────────────────────────────────────────────────────│
+│ CustomModelExecutionService:                             │
+│   • Download from MinIO:                                 │
+│     - trained_model.pkl                                  │
+│     - label_mapping.json                                 │
+│     - feature_columns.json                               │
+│     - prediction dataset                                 │
+│   • Create /data/ with:                                  │
+│     - test_data.csv                                      │
+│     - predict.py (template)                              │
+│     - algorithm.py (extracted)                           │
+│   • Create /model/ with:                                 │
+│     - trained_model.pkl                                  │
+│     - label_mapping.json                                 │
+│     - feature_columns.json                               │
+│   • Run container: python /data/predict.py               │
+│                                                           │
+│ Inside Container:                                         │
+│   predict.py:                                            │
+│     1. Load trained_model.pkl                            │
+│     2. Load test_data.csv                                │
+│     3. Apply feature encoding (using feature_columns.json)│
+│     4. Call Algorithm.predict(X)                         │
+│     5. Convert predictions (using label_mapping.json)    │
+│     6. Save predictions.csv                              │
+│                                                           │
+│   • Upload predictions.csv to MinIO                      │
+│   • Save ModelExecution entity                           │
+│   • Update AsyncTask with execution ID                   │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Troubleshooting
+
+**Training fails with "No model file (.pkl) generated"**:
+- Ensure your `fit()` method completes without errors
+- Check that you're not exiting early
+- Verify pickle can serialize your model: `pickle.dumps(model)`
+
+**Prediction fails with dimension mismatch**:
+- Ensure prediction data has same features as training (order doesn't matter)
+- Platform handles new categorical values automatically
+- Check you're not manually encoding data
+
+**Container fails to start**:
+- Check Dockerfile builds successfully locally: `docker build -t test .`
+- Ensure requirements.txt has valid packages
+- Check image size (should be < 1GB for efficiency)
+
+**Categorical encoding issues**:
+- Don't manually encode in your algorithm - platform handles it
+- Use string values for categorical columns
+- Last column of training data must be the target
+
+**k9s monitoring**:
+```bash
+# View training jobs
+k9s
+:job
+/train  # Filter for training jobs
+
+# Check job logs
+# Select job → press 'l'
+
+# Check for errors
+# Select job → press 'd' (describe)
+```
+
+---
 
 ### Making Predictions
 
