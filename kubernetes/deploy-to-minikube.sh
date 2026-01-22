@@ -62,6 +62,16 @@ echo "📦 Building frontend Docker image on host..."
 cd "$ROOT_DIR/frontend"
 DOCKER_BUILDKIT=1 docker build --progress=plain -t thesis-frontend:local .
 
+# -----------------------------
+# Build Weka Runner Docker image
+# -----------------------------
+echo "🧠 Building Weka Runner JAR with Maven..."
+cd "$ROOT_DIR/weka-runner"
+mvn clean package -DskipTests -B
+
+echo "📦 Building Weka Runner Docker image on host..."
+DOCKER_BUILDKIT=1 docker build --progress=plain -t thesisapp/weka-runner:latest .
+
 echo "✅ Images built on host!"
 
 # -----------------------------
@@ -117,6 +127,9 @@ minikube image load thesis-backend:local
 
 echo "📤 Loading frontend image into Minikube..."
 minikube image load thesis-frontend:local
+
+echo "📤 Loading Weka Runner image into Minikube..."
+minikube image load thesisapp/weka-runner:latest
 
 echo "✅ Images loaded into Minikube!"
 
