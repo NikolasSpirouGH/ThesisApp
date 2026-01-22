@@ -6,10 +6,15 @@
 .idea/
 *.iml
 out/
-weka-runner/target
-
+**/target/
 # VS Code
 .vscode/
+
+*.class
+*.jar
+*.war
+*.ear
+
 
 # Eclipse
 .project
