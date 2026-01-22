@@ -58,9 +58,9 @@ DOCKER_BUILDKIT=1 docker build --progress=plain -t thesis-backend:local .
 # -----------------------------
 # Build frontend Docker image
 # -----------------------------
-echo "📦 Building frontend Docker image on host..."
+echo "📦 Building frontend Docker image on host (no cache to ensure latest code)..."
 cd "$ROOT_DIR/frontend"
-DOCKER_BUILDKIT=1 docker build --progress=plain -t thesis-frontend:local .
+DOCKER_BUILDKIT=1 docker build --no-cache --progress=plain -t thesis-frontend:local .
 
 # -----------------------------
 # Build Weka Runner Docker image
@@ -133,8 +133,35 @@ minikube image load thesisapp/weka-runner:latest
 
 echo "✅ Images loaded into Minikube!"
 
-echo "🔎 Minikube runtime images (containerd):"
-minikube ssh -- "sudo crictl images | awk 'NR==1 || /thesis-backend|thesis-frontend/'" || true
+echo "🔎 Verifying images were loaded correctly..."
+echo ""
+echo "Local Docker image IDs:"
+docker inspect thesis-backend:local --format='  backend:  {{.Id}}' 2>/dev/null | cut -c1-60 || echo "  backend: NOT FOUND"
+docker inspect thesis-frontend:local --format='  frontend: {{.Id}}' 2>/dev/null | cut -c1-60 || echo "  frontend: NOT FOUND"
+echo ""
+echo "Minikube image IDs:"
+minikube ssh "docker inspect thesis-backend:local --format='  backend:  {{.Id}}'" 2>/dev/null | cut -c1-60 || echo "  backend: NOT FOUND"
+minikube ssh "docker inspect thesis-frontend:local --format='  frontend: {{.Id}}'" 2>/dev/null | cut -c1-60 || echo "  frontend: NOT FOUND"
+echo ""
+
+# Verify IDs match (trim whitespace for comparison)
+LOCAL_BACKEND=$(docker inspect thesis-backend:local --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]' || echo "")
+MINIKUBE_BACKEND=$(minikube ssh "docker inspect thesis-backend:local --format='{{.Id}}'" 2>/dev/null | tr -d '[:space:]' || echo "")
+LOCAL_FRONTEND=$(docker inspect thesis-frontend:local --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]' || echo "")
+MINIKUBE_FRONTEND=$(minikube ssh "docker inspect thesis-frontend:local --format='{{.Id}}'" 2>/dev/null | tr -d '[:space:]' || echo "")
+
+if [ "$LOCAL_BACKEND" = "$MINIKUBE_BACKEND" ] && [ -n "$LOCAL_BACKEND" ]; then
+  echo "✅ Backend image IDs match!"
+else
+  echo "⚠️  WARNING: Backend image IDs do NOT match!"
+fi
+
+if [ "$LOCAL_FRONTEND" = "$MINIKUBE_FRONTEND" ] && [ -n "$LOCAL_FRONTEND" ]; then
+  echo "✅ Frontend image IDs match!"
+else
+  echo "⚠️  WARNING: Frontend image IDs do NOT match!"
+fi
+echo ""
 
 # -----------------------------
 # Secrets (idempotent)

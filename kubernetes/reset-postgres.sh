@@ -34,6 +34,10 @@ fi
 echo "🧹 Cleaning up Released PVs..."
 kubectl get pv | grep Released | grep postgres | awk '{print $1}' | xargs -r kubectl delete pv
 
+# Delete the actual data from Minikube's hostpath provisioner
+echo "🗑️  Deleting Postgres data from Minikube hostpath..."
+minikube ssh "sudo rm -rf /tmp/hostpath-provisioner/thesisapp/postgres-storage-postgres-0" 2>/dev/null || true
+
 echo "✅ Postgres cleanup complete!"
 echo ""
 echo "Now run: ./deploy-to-minikube.sh"

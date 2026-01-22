@@ -119,6 +119,13 @@ public class WekaTrainer {
         SerializationHelper.write(modelFile.toString(), trainedModel);
         log.info("Model saved to: {}", modelFile);
 
+        // 5b. Save training data header (structure only, no instances) for prediction
+        // This is needed so predictor can map numeric class indices to class labels
+        Instances header = new Instances(data, 0); // Copy structure with 0 instances
+        Path headerFile = modelDir.resolve("header.ser");
+        SerializationHelper.write(headerFile.toString(), header);
+        log.info("Training data header saved to: {}", headerFile);
+
         // 6. Save metrics
         Path metricsFile = modelDir.resolve("metrics.json");
         try (FileWriter writer = new FileWriter(metricsFile.toFile())) {

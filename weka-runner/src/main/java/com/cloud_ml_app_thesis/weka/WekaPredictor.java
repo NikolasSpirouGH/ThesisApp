@@ -85,6 +85,17 @@ public class WekaPredictor {
         Object model = SerializationHelper.read(modelFile.toString());
         log.info("Loaded model: {}", model.getClass().getName());
 
+        // 2b. Load training data header (for class labels in classification)
+        Instances trainingHeader = null;
+        Path headerFile = modelDir.resolve("header.ser");
+        if (Files.exists(headerFile)) {
+            trainingHeader = (Instances) SerializationHelper.read(headerFile.toString());
+            log.info("Loaded training header: {} attributes, classIndex={}",
+                    trainingHeader.numAttributes(), trainingHeader.classIndex());
+        } else {
+            log.warn("header.ser not found - class labels may not be available for classification");
+        }
+
         // 3. Load test data
         Path testDataFile = dataDir.resolve("test_data.csv");
         if (!Files.exists(testDataFile)) {
@@ -122,7 +133,7 @@ public class WekaPredictor {
 
         switch (algorithmType.toUpperCase()) {
             case "CLASSIFICATION" -> {
-                predictions = predictClassification((Classifier) model, testData, targetColumn, metadata);
+                predictions = predictClassification((Classifier) model, testData, targetColumn, trainingHeader, metadata);
             }
             case "REGRESSION" -> {
                 predictions = predictRegression((Classifier) model, testData, targetColumn, metadata);
@@ -144,7 +155,7 @@ public class WekaPredictor {
         log.info("Prediction metadata saved to: {}", metadataFile);
     }
 
-    private List<String> predictClassification(Classifier classifier, Instances data, String targetColumn, ObjectNode metadata) throws Exception {
+    private List<String> predictClassification(Classifier classifier, Instances data, String targetColumn, Instances trainingHeader, ObjectNode metadata) throws Exception {
         log.info("Running classification predictions...");
 
         // Class index should already be set by ensureTargetColumnExists
@@ -167,13 +178,37 @@ public class WekaPredictor {
             data = Filter.useFilter(data, convert);
         }
 
+        // Determine which attribute to use for class labels
+        // Prefer training header's class attribute (has correct labels from training)
+        Attribute labelSource = null;
+        if (trainingHeader != null && trainingHeader.classIndex() >= 0) {
+            labelSource = trainingHeader.classAttribute();
+            log.info("Using training header for class labels: {} values", labelSource.numValues());
+        } else {
+            labelSource = data.classAttribute();
+            log.info("Using test data class attribute for labels: {} values", labelSource.numValues());
+        }
+
         List<String> predictions = new ArrayList<>();
+        int numClassValues = labelSource.numValues();
+
+        log.info("Label source attribute '{}' has {} values, isNominal={}",
+                labelSource.name(), numClassValues, labelSource.isNominal());
+
         for (int i = 0; i < data.numInstances(); i++) {
             Instance instance = data.instance(i);
             double pred = classifier.classifyInstance(instance);
 
             // Convert numeric prediction to class label
-            String predLabel = data.classAttribute().value((int) pred);
+            String predLabel;
+            if (labelSource.isNominal() && numClassValues > 0 && (int) pred < numClassValues) {
+                // Normal case: get label from class attribute (training header preferred)
+                predLabel = labelSource.value((int) pred);
+            } else {
+                // Fallback: no class labels available
+                predLabel = "Class_" + (int) pred;
+                log.debug("Using fallback label {} (no class values available)", predLabel);
+            }
             predictions.add(predLabel);
         }
 

@@ -6,12 +6,14 @@ A comprehensive full-stack machine learning platform for training models with We
 
 ThesisApp provides a complete environment for:
 - Training machine learning models using built-in Weka algorithms or custom Python implementations
+- **All ML workloads (both Weka and Custom) run as isolated Kubernetes Jobs** for scalability and resource management
 - Executing predictions on trained models
 - Managing datasets, algorithms, and model lifecycle
 - Collaborative model sharing between users
+- Task cancellation with proper cleanup (K8s job deletion, MinIO file cleanup)
 - Production-ready deployment on Kubernetes with proper ingress routing
 
-**Key Technologies**: Spring Boot (Java 21), TypeScript, PostgreSQL, MinIO, Kubernetes, Docker, Weka ML Library
+**Key Technologies**: Spring Boot (Java 21), TypeScript, PostgreSQL, MinIO, Kubernetes, Docker, Weka Runner (containerized Weka)
 
 ---
 
@@ -150,7 +152,13 @@ ThesisApp provides a complete environment for:
 
 **Stateful Storage**: PostgreSQL and MinIO use StatefulSets with persistent volumes for data durability.
 
-**Dynamic ML Workloads**: Custom algorithms run as Kubernetes Jobs, providing isolation and resource management.
+**Containerized ML Workloads**: **ALL ML training and prediction** (both Weka and Custom Python algorithms) run as isolated Kubernetes Jobs:
+- **Weka algorithms**: Run via `weka-runner` container (Java-based Weka library)
+- **Custom algorithms**: Run via user-provided Docker images (Python-based)
+- Both share the same execution pattern: Job creation → log streaming → result collection
+- Supports **task cancellation** with proper cleanup (K8s job deletion, MinIO orphan file removal)
+
+**Task Management**: Async task tracking with status monitoring, cancellation support, and automatic cleanup.
 
 ### Understanding the Network Setup
 
@@ -320,11 +328,12 @@ cd kubernetes
 ```
 
 This script will:
-1. Build backend JAR with Maven (inside Docker)
+1. Build backend JAR with Maven
 2. Build Docker images for backend and frontend
-3. Load images into Minikube
-4. Deploy all Kubernetes resources (namespace, secrets, deployments, services, ingress)
-5. Patch ingress controller for WSL2 compatibility
+3. Build Weka Runner JAR and Docker image (`thesisapp/weka-runner:latest`)
+4. Load all images into Minikube (backend, frontend, weka-runner)
+5. Deploy all Kubernetes resources (namespace, secrets, deployments, services, ingress)
+6. Patch ingress controller for WSL2 compatibility
 
 Expected duration: 5-10 minutes depending on your system.
 
@@ -342,6 +351,11 @@ Expected pods:
 - postgres-0
 - minio-0
 - mailhog
+
+**Note**: `weka-runner` and custom algorithm containers are NOT persistent pods. They run as on-demand Kubernetes Jobs when training/prediction is requested. View running jobs with:
+```bash
+kubectl get jobs -n thesisapp
+```
 
 ### 4. Start Port-Forward for WSL2
 
@@ -761,21 +775,27 @@ mvn test -Dtest=BasicFullWekaFlowIT \
 
 ### Test Coverage
 
-**BasicFullWekaFlowIT**: Tests the complete lifecycle with built-in Weka algorithms:
+**BasicFullWekaFlowIT**: Tests the complete lifecycle with built-in Weka algorithms (runs as K8s Jobs):
 - User authentication
 - Dataset upload
-- Model training with Weka algorithm (e.g., LinearRegression)
-- Task monitoring
-- Model prediction
+- Model training with Weka algorithm (e.g., LinearRegression) via `weka-runner` container
+- Task monitoring (including K8s Job status)
+- Model prediction via K8s Job
 - Result download
 
 **BasicFullCustomFlowIT**: Tests custom Python algorithm workflows:
 - Custom algorithm upload (Docker image as .tar)
 - Dataset upload
-- Model training with custom algorithm
+- Model training with custom algorithm via K8s Job
 - Task monitoring
 - Model prediction
 - Result download
+
+**Note**: Both Weka and Custom tests create Kubernetes Jobs. You can monitor them with:
+```bash
+kubectl get jobs -n thesisapp -w
+# or using k9s: :job
+```
 
 **Note**: Custom algorithm tests take longer (3-5 minutes) due to Docker image loading into Minikube.
 
@@ -799,6 +819,8 @@ export TOKEN="your_jwt_token_here"
 
 ### Training with Weka Algorithms
 
+Weka training runs as an isolated Kubernetes Job using the `weka-runner` container.
+
 ```bash
 # 1. Train model with built-in Weka algorithm
 curl -X POST http://thesisapp.local/api/train/train-model \
@@ -815,10 +837,24 @@ curl -X POST http://thesisapp.local/api/train/train-model \
 curl -H "Authorization: Bearer $TOKEN" \
   http://thesisapp.local/api/tasks/{taskId}
 
-# 3. Get model ID when completed
+# 3. (Optional) Cancel training if needed
+curl -X PUT http://thesisapp.local/api/tasks/{taskId}/stop \
+  -H "Authorization: Bearer $TOKEN"
+# This will: delete K8s job, clean up MinIO files, set status to STOPPED
+
+# 4. Get model ID when completed
 curl -H "Authorization: Bearer $TOKEN" \
   http://thesisapp.local/api/tasks/{taskId}/model-id
 ```
+
+**What happens during Weka training:**
+1. Backend creates a Kubernetes Job (`weka-training-*`)
+2. Job runs `thesisapp/weka-runner:latest` container
+3. Weka Runner reads `dataset.csv` and `params.json` from shared volume
+4. Trains model using specified Weka algorithm
+5. Outputs `model.ser` and `metrics.json` to shared volume
+6. Backend uploads results to MinIO
+7. Task status updated to COMPLETED
 
 ### Training with Custom Python Algorithms
 
@@ -917,6 +953,75 @@ curl -X POST http://thesisapp.local/api/train/custom \
   "n_epochs": 500           // Overridden
 }
 ```
+
+---
+
+## ML Execution Architecture
+
+### Overview
+
+**ALL machine learning workloads run as isolated Kubernetes Jobs**, providing:
+- Resource isolation (memory/CPU limits per job)
+- Horizontal scalability
+- Task cancellation with cleanup
+- Real-time log streaming
+- Automatic cleanup after completion
+
+### Weka Algorithms (Built-in)
+
+Built-in Weka algorithms run via the `weka-runner` container - a Java application that wraps the Weka ML library.
+
+**Supported Algorithms**: J48, RandomForest, LinearRegression, Logistic, NaiveBayes, SMO, IBk, REPTree, SimpleKMeans, EM, and more.
+
+**Training Flow**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Backend prepares:                                           │
+│   /shared/weka-training-ds-XXX/                             │
+│     ├── dataset.csv (training data)                         │
+│     └── params.json (algorithm config)                      │
+│   /shared/weka-training-out-XXX/ (empty, for output)        │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Kubernetes Job: weka-training-1234567890                    │
+│   Image: thesisapp/weka-runner:latest                       │
+│   Command: java -jar weka-runner.jar train                  │
+│   Memory: 4Gi limit                                         │
+│                                                             │
+│   Weka Runner:                                              │
+│     1. Loads dataset.csv                                    │
+│     2. Reads algorithm config from params.json              │
+│     3. Trains Weka classifier/clusterer                     │
+│     4. Outputs model.ser + metrics.json                     │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Backend collects results:                                   │
+│   - Uploads model.ser to MinIO (models bucket)              │
+│   - Uploads metrics.json to MinIO (metrics bucket)          │
+│   - Creates Model entity in PostgreSQL                      │
+│   - Updates Training status to COMPLETED                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**params.json format (Weka)**:
+```json
+{
+  "algorithmClassName": "weka.classifiers.trees.J48",
+  "algorithmType": "CLASSIFIER",
+  "options": "-C 0.25 -M 2",
+  "targetColumn": "class",
+  "basicAttributesColumns": "1,2,3,4"
+}
+```
+
+**Prediction Flow** (similar pattern):
+- Input: test_data.csv + model.ser
+- Output: predictions.csv
+- Job name: `weka-prediction-*`
 
 ---
 
@@ -1301,11 +1406,13 @@ feature1,feature2,categorical_feature
 
 ### Container Execution
 
-The platform supports two execution modes, selected via `CONTAINER_RUNNER` environment variable:
+**ALL ML workloads run as Kubernetes Jobs**, providing isolation, resource management, and cancellation support.
+
+The platform supports two execution modes via `CONTAINER_RUNNER` environment variable:
 
 #### Docker Mode (`docker`)
 
-**Used for**: Docker Compose deployments
+**Used for**: Docker Compose deployments (local development)
 
 **How it works**:
 ```
@@ -1322,8 +1429,7 @@ Backend Container
        -v /app/shared/training-out-XXXXX:/model \
        -e DATA_DIR=/data \
        -e MODEL_DIR=/model \
-       user/algorithm:latest \
-       python /data/train.py
+       <image> <command>
 ```
 
 **Benefits**:
@@ -1336,61 +1442,90 @@ Backend Container
 - Less isolation than Kubernetes
 - No resource quotas
 
-#### Kubernetes Mode (`kubernetes`)
+#### Kubernetes Mode (`kubernetes`) - **Recommended**
 
 **Used for**: Production Kubernetes deployments
 
-**How it works**:
+**Both Weka and Custom algorithms use the same Kubernetes Job pattern:**
+
 ```
-Backend Pod
-  │
-  ├─ Mounts shared PVC at /app/shared
-  ├─ Creates temp directories in PVC
-  │  ├─ training-ds-XXXXX/
-  │  └─ training-out-XXXXX/
-  │
-  └─ Creates Kubernetes Job:
-     apiVersion: batch/v1
-     kind: Job
-     metadata:
-       name: training-1234567890
-     spec:
-       template:
-         spec:
-           containers:
-           - name: trainer
-             image: user/algorithm:latest
-             command: ["sh", "-c", "python /shared/.../train.py"]
-             env:
-             - name: DATA_DIR
-               value: "/shared/training-ds-XXXXX"
-             - name: MODEL_DIR
-               value: "/shared/training-out-XXXXX"
-             volumeMounts:
-             - name: shared-storage
-               mountPath: /shared
-           volumes:
-           - name: shared-storage
-             persistentVolumeClaim:
-               claimName: shared-pvc
-           restartPolicy: Never
-       backoffLimit: 0
-       ttlSecondsAfterFinished: 300
+┌──────────────────────────────────────────────────────────────┐
+│                    Backend Pod                                │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ 1. Prepare data in shared PVC                        │   │
+│  │ 2. Create Kubernetes Job                             │   │
+│  │ 3. Store jobName in AsyncTaskStatus (for cancel)     │   │
+│  │ 4. Stream logs in real-time                          │   │
+│  │ 5. Wait for completion or cancellation               │   │
+│  │ 6. Collect results from shared PVC                   │   │
+│  │ 7. Upload to MinIO                                   │   │
+│  └──────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│               Kubernetes Job (isolated pod)                   │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  Weka Training:                                        │ │
+│  │    Image: thesisapp/weka-runner:latest                 │ │
+│  │    Command: java -jar weka-runner.jar train            │ │
+│  │    Inputs: dataset.csv, params.json                    │ │
+│  │    Outputs: model.ser, metrics.json                    │ │
+│  ├────────────────────────────────────────────────────────┤ │
+│  │  Custom Training:                                      │ │
+│  │    Image: user/algorithm:latest                        │ │
+│  │    Command: python /data/train.py                      │ │
+│  │    Inputs: dataset.csv, params.json, algorithm.py      │ │
+│  │    Outputs: trained_model.pkl, metrics.json            │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                               │
+│  Shared Volume: /shared (PersistentVolumeClaim)              │
+│  Memory Limit: 2-4 GiB                                       │
+│  TTL After Finished: 300 seconds (auto-cleanup)              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Job Types:**
+
+| Type | Job Name Prefix | Image | Command |
+|------|----------------|-------|---------|
+| Weka Training | `weka-training-*` | `thesisapp/weka-runner:latest` | `java -jar ... train` |
+| Weka Prediction | `weka-prediction-*` | `thesisapp/weka-runner:latest` | `java -jar ... predict` |
+| Custom Training | `training-*` | User's Docker image | `python /data/train.py` |
+| Custom Prediction | `prediction-*` | User's Docker image | `python /data/predict.py` |
+
+**Task Cancellation:**
+
+Users can cancel running tasks, which triggers:
+1. `stopRequested` flag set in database
+2. Kubernetes Job deleted via API
+3. Associated Pod terminated
+4. MinIO files cleaned up (if already uploaded)
+5. Task status set to `STOPPED`
+6. Training/Execution status set to `FAILED`
+
+```bash
+# Cancel a running task
+curl -X PUT http://thesisapp.local/api/tasks/{taskId}/stop \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 **Benefits**:
-- Better isolation (separate pods)
-- Resource quotas (memory/CPU limits)
+- Better isolation (separate pods per job)
+- Resource quotas (memory/CPU limits per job)
 - Auto-cleanup (TTL after completion)
+- Task cancellation with proper cleanup
 - Scales horizontally
 - Production-grade orchestration
+- Real-time log streaming
 
 **Features**:
 - **Shared PVC**: `shared-pvc` mounted at `/shared` on all pods
-- **Resource Limits**: 2Gi memory limit per training job
+- **Resource Limits**: 2-4Gi memory limit per job (Weka needs more)
 - **Auto-cleanup**: Jobs deleted 5 minutes after completion
 - **No Retries**: `backoffLimit: 0` prevents infinite loops on failure
 - **Log Streaming**: Real-time logs via Kubernetes API
+- **Job Tracking**: `jobName` stored in `AsyncTaskStatus` for cancellation
 
 **Configuration**:
 ```yaml
@@ -2000,10 +2135,12 @@ Default values: `minioadmin` / `minioadmin`
 
 ## Features
 
-- **Built-in Weka Algorithms**: J48, RandomForest, LinearRegression, Logistic, NaiveBayes, SMO, IBk, and more
+- **Built-in Weka Algorithms**: J48, RandomForest, LinearRegression, Logistic, NaiveBayes, SMO, IBk, and more (runs as isolated K8s Jobs via weka-runner)
 - **Custom Python Algorithms**: Upload Docker images with custom ML implementations
+- **Containerized Execution**: ALL ML workloads (Weka + Custom) run as Kubernetes Jobs for isolation and scalability
+- **Task Cancellation**: Stop running training/prediction tasks with proper cleanup (K8s job deletion, MinIO cleanup)
 - **Automatic Data Preprocessing**: Handles categorical features, missing values, normalization
-- **Asynchronous Task Execution**: Long-running training jobs with progress monitoring
+- **Asynchronous Task Execution**: Long-running training jobs with progress monitoring and real-time log streaming
 - **Model Persistence**: Trained models stored in MinIO object storage
 - **User Management**: Role-based access control (ADMIN, USER)
 - **Model Sharing**: Share models between users with access control
@@ -2018,8 +2155,15 @@ Default values: `minioadmin` / `minioadmin`
 - Java 21, Spring Boot 3.x
 - Spring Security with JWT authentication
 - Spring Data JPA with Hibernate
-- Weka ML Library 3.8.6
-- Fabric8 Kubernetes Client
+- Fabric8 Kubernetes Client (for Job management)
+- Async task management with cancellation support
+
+**Weka Runner** (containerized ML engine):
+- Java-based Weka ML Library 3.8.6
+- Runs as isolated Kubernetes Jobs
+- Supports: J48, RandomForest, LinearRegression, Logistic, NaiveBayes, SMO, IBk, and more
+- Inputs: dataset.csv, params.json
+- Outputs: model.ser, metrics.json
 
 **Frontend**:
 - TypeScript
@@ -2035,7 +2179,7 @@ Default values: `minioadmin` / `minioadmin`
 - nginx Ingress Controller
 
 **Development**:
-- Maven (backend build)
+- Maven (backend + weka-runner build)
 - npm (frontend build)
 - Docker BuildKit
 
