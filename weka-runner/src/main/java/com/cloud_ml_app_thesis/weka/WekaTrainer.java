@@ -119,13 +119,6 @@ public class WekaTrainer {
         SerializationHelper.write(modelFile.toString(), trainedModel);
         log.info("Model saved to: {}", modelFile);
 
-        // 5b. Save training data header (structure only, no instances) for prediction
-        // This is needed so predictor can map numeric class indices to class labels
-        Instances header = new Instances(data, 0); // Copy structure with 0 instances
-        Path headerFile = modelDir.resolve("header.ser");
-        SerializationHelper.write(headerFile.toString(), header);
-        log.info("Training data header saved to: {}", headerFile);
-
         // 6. Save metrics
         Path metricsFile = modelDir.resolve("metrics.json");
         try (FileWriter writer = new FileWriter(metricsFile.toFile())) {
@@ -154,8 +147,11 @@ public class WekaTrainer {
 
         // Instantiate and configure classifier
         Classifier classifier = (Classifier) Class.forName(className).getDeclaredConstructor().newInstance();
-        if (options != null && !options.isEmpty()) {
-            String[] optionsArray = Utils.splitOptions(options);
+        // Trim options and only set if not blank
+        if (options != null && !options.trim().isEmpty()) {
+            String trimmedOptions = options.trim();
+            log.info("Setting classifier options: '{}'", trimmedOptions);
+            String[] optionsArray = Utils.splitOptions(trimmedOptions);
             ((weka.core.OptionHandler) classifier).setOptions(optionsArray);
         }
 
@@ -210,8 +206,11 @@ public class WekaTrainer {
 
         // Instantiate and configure classifier (regression uses same interface)
         Classifier classifier = (Classifier) Class.forName(className).getDeclaredConstructor().newInstance();
-        if (options != null && !options.isEmpty()) {
-            String[] optionsArray = Utils.splitOptions(options);
+        // Trim options and only set if not blank
+        if (options != null && !options.trim().isEmpty()) {
+            String trimmedOptions = options.trim();
+            log.info("Setting regressor options: '{}'", trimmedOptions);
+            String[] optionsArray = Utils.splitOptions(trimmedOptions);
             ((weka.core.OptionHandler) classifier).setOptions(optionsArray);
         }
 
@@ -261,9 +260,14 @@ public class WekaTrainer {
 
         // Instantiate and configure clusterer
         Clusterer clusterer = (Clusterer) Class.forName(className).getDeclaredConstructor().newInstance();
-        if (options != null && !options.isEmpty()) {
-            String[] optionsArray = Utils.splitOptions(options);
+        // Trim options and only set if not blank
+        if (options != null && !options.trim().isEmpty()) {
+            String trimmedOptions = options.trim();
+            log.info("Setting clusterer options: '{}'", trimmedOptions);
+            String[] optionsArray = Utils.splitOptions(trimmedOptions);
             ((weka.core.OptionHandler) clusterer).setOptions(optionsArray);
+        } else {
+            log.info("No options provided for clusterer, using defaults");
         }
 
         // Build clusterer
@@ -402,7 +406,7 @@ public class WekaTrainer {
 
     /**
      * Fix nested options (same as AlgorithmUtil.fixNestedOptions in backend).
-     * Handles special cases like EuclideanDistance -R option.
+     * Handles special cases like EuclideanDistance -R option and missing option values.
      */
     private String fixNestedOptions(String raw) {
         if (raw == null || raw.isEmpty()) {
@@ -417,6 +421,15 @@ public class WekaTrainer {
         // Fix incomplete scientific notation (e.g., "1.0E" -> "1.0")
         raw = raw.replaceAll("(\\d+\\.\\d+)[Ee](?![+-]?\\d)", "$1");
 
-        return raw;
+        // Remove flags that are immediately followed by another flag (missing value)
+        // This handles cases like "-t2 -t1" where -t2 expects a value but gets -t1
+        // Pattern: -flag followed by space and another -flag (without a value in between)
+        String fixed = raw.replaceAll("(-[a-zA-Z][a-zA-Z0-9]*)\\s+(?=-[a-zA-Z])", "");
+
+        if (!fixed.equals(raw)) {
+            log.info("Fixed options (removed flags with missing values): '{}' -> '{}'", raw, fixed);
+        }
+
+        return fixed;
     }
 }

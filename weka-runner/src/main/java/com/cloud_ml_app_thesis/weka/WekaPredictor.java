@@ -72,9 +72,18 @@ public class WekaPredictor {
                 ? params.get("basicAttributesColumns").asText()
                 : null;
 
+        // Class labels from training (for classification)
+        List<String> classLabels = new ArrayList<>();
+        if (params.has("classLabels") && params.get("classLabels").isArray()) {
+            for (JsonNode label : params.get("classLabels")) {
+                classLabels.add(label.asText());
+            }
+        }
+
         log.info("Algorithm type: {}", algorithmType);
         log.info("Target column: {}", targetColumn);
         log.info("Basic attributes columns: {}", basicAttributesColumns);
+        log.info("Class labels from training: {}", classLabels);
 
         // 2. Load model
         Path modelFile = modelDir.resolve("model.ser");
@@ -84,17 +93,6 @@ public class WekaPredictor {
 
         Object model = SerializationHelper.read(modelFile.toString());
         log.info("Loaded model: {}", model.getClass().getName());
-
-        // 2b. Load training data header (for class labels in classification)
-        Instances trainingHeader = null;
-        Path headerFile = modelDir.resolve("header.ser");
-        if (Files.exists(headerFile)) {
-            trainingHeader = (Instances) SerializationHelper.read(headerFile.toString());
-            log.info("Loaded training header: {} attributes, classIndex={}",
-                    trainingHeader.numAttributes(), trainingHeader.classIndex());
-        } else {
-            log.warn("header.ser not found - class labels may not be available for classification");
-        }
 
         // 3. Load test data
         Path testDataFile = dataDir.resolve("test_data.csv");
@@ -133,7 +131,7 @@ public class WekaPredictor {
 
         switch (algorithmType.toUpperCase()) {
             case "CLASSIFICATION" -> {
-                predictions = predictClassification((Classifier) model, testData, targetColumn, trainingHeader, metadata);
+                predictions = predictClassification((Classifier) model, testData, targetColumn, classLabels, metadata);
             }
             case "REGRESSION" -> {
                 predictions = predictRegression((Classifier) model, testData, targetColumn, metadata);
@@ -155,7 +153,8 @@ public class WekaPredictor {
         log.info("Prediction metadata saved to: {}", metadataFile);
     }
 
-    private List<String> predictClassification(Classifier classifier, Instances data, String targetColumn, Instances trainingHeader, ObjectNode metadata) throws Exception {
+    private List<String> predictClassification(Classifier classifier, Instances data, String targetColumn,
+            List<String> classLabels, ObjectNode metadata) throws Exception {
         log.info("Running classification predictions...");
 
         // Class index should already be set by ensureTargetColumnExists
@@ -178,37 +177,21 @@ public class WekaPredictor {
             data = Filter.useFilter(data, convert);
         }
 
-        // Determine which attribute to use for class labels
-        // Prefer training header's class attribute (has correct labels from training)
-        Attribute labelSource = null;
-        if (trainingHeader != null && trainingHeader.classIndex() >= 0) {
-            labelSource = trainingHeader.classAttribute();
-            log.info("Using training header for class labels: {} values", labelSource.numValues());
-        } else {
-            labelSource = data.classAttribute();
-            log.info("Using test data class attribute for labels: {} values", labelSource.numValues());
+        // Class labels must be provided by backend (extracted from training dataset)
+        if (classLabels == null || classLabels.isEmpty()) {
+            throw new IllegalStateException("❌ No class labels provided in params.json for classification");
         }
+        log.info("Class labels from training: {}", classLabels);
 
         List<String> predictions = new ArrayList<>();
-        int numClassValues = labelSource.numValues();
-
-        log.info("Label source attribute '{}' has {} values, isNominal={}",
-                labelSource.name(), numClassValues, labelSource.isNominal());
 
         for (int i = 0; i < data.numInstances(); i++) {
             Instance instance = data.instance(i);
             double pred = classifier.classifyInstance(instance);
+            int predIndex = (int) pred;
 
             // Convert numeric prediction to class label
-            String predLabel;
-            if (labelSource.isNominal() && numClassValues > 0 && (int) pred < numClassValues) {
-                // Normal case: get label from class attribute (training header preferred)
-                predLabel = labelSource.value((int) pred);
-            } else {
-                // Fallback: no class labels available
-                predLabel = "Class_" + (int) pred;
-                log.debug("Using fallback label {} (no class values available)", predLabel);
-            }
+            String predLabel = classLabels.get(predIndex);
             predictions.add(predLabel);
         }
 
@@ -283,20 +266,30 @@ public class WekaPredictor {
         Path outputFile = modelDir.resolve("predictions.csv");
         int classIndex = data.classIndex();
 
-        // Replace missing values in the class/target column with predictions
-        if (classIndex >= 0) {
+        // For classification predictions, we don't set values on the data instances
+        // because the class attribute may be a numeric placeholder.
+        // Instead, we write predictions directly to CSV.
+        // Detect if predictions are numeric (regression) or string labels (classification/clustering)
+        boolean predictionsAreNumeric = false;
+        if (!predictions.isEmpty()) {
+            try {
+                Double.parseDouble(predictions.get(0));
+                predictionsAreNumeric = true;
+            } catch (NumberFormatException e) {
+                predictionsAreNumeric = false;
+            }
+        }
+
+        log.info("Writing predictions CSV. Class index: {}, predictions are numeric: {}", classIndex, predictionsAreNumeric);
+
+        // For regression, update the data instances
+        if (classIndex >= 0 && predictionsAreNumeric) {
             Attribute classAttr = data.classAttribute();
             for (int i = 0; i < data.numInstances(); i++) {
                 String predValue = predictions.get(i);
-                if (classAttr.isNumeric()) {
-                    // For regression: parse as double
-                    data.instance(i).setValue(classIndex, Double.parseDouble(predValue));
-                } else {
-                    // For classification: set as string value
-                    data.instance(i).setValue(classIndex, predValue);
-                }
+                data.instance(i).setValue(classIndex, Double.parseDouble(predValue));
             }
-            log.info("Replaced missing values in target column '{}' with predictions", classAttr.name());
+            log.info("Replaced missing values in target column '{}' with regression predictions", classAttr.name());
         }
 
         // Write CSV
@@ -316,7 +309,12 @@ public class WekaPredictor {
 
                 for (int j = 0; j < data.numAttributes(); j++) {
                     if (j > 0) row.append(",");
-                    if (data.attribute(j).isNumeric()) {
+
+                    // For the class column with non-numeric predictions (classification/clustering),
+                    // write the prediction string directly
+                    if (j == classIndex && !predictionsAreNumeric) {
+                        row.append(predictions.get(i));
+                    } else if (data.attribute(j).isNumeric()) {
                         row.append(instance.value(j));
                     } else {
                         row.append(instance.stringValue(j));
