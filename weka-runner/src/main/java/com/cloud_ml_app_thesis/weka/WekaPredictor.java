@@ -177,11 +177,11 @@ public class WekaPredictor {
             data = Filter.useFilter(data, convert);
         }
 
-        // Class labels must be provided by backend (extracted from training dataset)
+        // Class labels must be provided by backend (extracted from metrics.json during training)
         if (classLabels == null || classLabels.isEmpty()) {
             throw new IllegalStateException("❌ No class labels provided in params.json for classification");
         }
-        log.info("Class labels from training: {}", classLabels);
+        log.info("Class labels: {}", classLabels);
 
         List<String> predictions = new ArrayList<>();
 
@@ -342,6 +342,8 @@ public class WekaPredictor {
         // Parse target column index (1-based to 0-based)
         int targetIdx = -1;
         String targetAttrName = null;
+        boolean needsPlaceholder = false;
+
         if (targetColumn != null && !targetColumn.isEmpty()) {
             try {
                 targetIdx = Integer.parseInt(targetColumn.trim()) - 1;
@@ -351,6 +353,7 @@ public class WekaPredictor {
                 } else {
                     // Target column doesn't exist in prediction data - we'll add it
                     targetAttrName = "target";
+                    needsPlaceholder = true;
                     log.info("Target column index {} is beyond dataset ({}). Will add placeholder.", targetIdx, data.numAttributes());
                 }
             } catch (NumberFormatException e) {
@@ -359,15 +362,23 @@ public class WekaPredictor {
                 Attribute attr = data.attribute(targetColumn);
                 if (attr != null) {
                     targetIdx = attr.index();
+                } else {
+                    needsPlaceholder = true;
                 }
             }
+        } else {
+            // No targetColumn specified - add placeholder to match training structure
+            // This matches the training behavior where last column becomes the class
+            targetAttrName = "class";
+            needsPlaceholder = true;
+            log.info("No target column specified. Will add placeholder 'class' column to match training structure.");
         }
 
         // Build list of column names to keep
         List<String> columnNames = new ArrayList<>();
 
         if (basicAttributesColumns == null || basicAttributesColumns.isEmpty()) {
-            // Keep all columns except target (if it exists)
+            // Keep all columns
             for (int i = 0; i < data.numAttributes(); i++) {
                 columnNames.add(data.attribute(i).name());
             }
@@ -385,8 +396,8 @@ public class WekaPredictor {
 
         log.info("Selected basic attribute columns: {}", columnNames);
 
-        // Ensure target column is in the list (add at end if not present)
-        if (targetAttrName != null && !columnNames.contains(targetAttrName)) {
+        // Ensure target column is in the list (add at end if not present and not a placeholder)
+        if (targetAttrName != null && !needsPlaceholder && !columnNames.contains(targetAttrName)) {
             columnNames.add(targetAttrName);
             log.info("Added target column '{}' to selected columns", targetAttrName);
         }
@@ -418,7 +429,7 @@ public class WekaPredictor {
 
         // Check if target column exists in filtered data, if not add it
         Attribute classAttr = filteredData.attribute(targetAttrName);
-        if (classAttr == null && targetAttrName != null) {
+        if ((classAttr == null || needsPlaceholder) && targetAttrName != null) {
             log.info("Target column '{}' not found in filtered data. Adding placeholder numeric column.", targetAttrName);
 
             // Add a new numeric attribute with missing values (like backend does for REGRESSION)
