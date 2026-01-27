@@ -9,6 +9,7 @@ out/
 **/target/
 # VS Code
 .vscode/
+*:Zone.Identifier
 
 *.class
 *.jar
