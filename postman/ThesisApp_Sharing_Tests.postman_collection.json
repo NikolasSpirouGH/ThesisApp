@@ -1,0 +1,1309 @@
+{
+	"info": {
+		"_postman_id": "thesis-sharing-tests",
+		"name": "ThesisApp - Sharing Feature Tests",
+		"description": "Comprehensive Postman collection for testing all sharing features:\n- Dataset sharing (direct user-to-user + group)\n- Model sharing (direct user-to-user + group)\n- Pipeline copy (direct user-to-user + group)\n- Group management\n- Leader vs Member sharing scenarios\n\n## Setup Instructions\n1. Run V6__Sharing_Test_Data.sql migration (or drop & re-migrate DB)\n2. Start the backend server on localhost:8080\n3. Run the '00 - Auth' folder first to get JWT tokens for all users\n4. Then run any sharing test folder\n\n## Users & Passwords\n| Username | Password | Role | Groups |\n|----------|----------|------|--------|\n| bigspy | adminPassword | ADMIN | Leader: Group 2 |\n| nickriz | userPassword | USER | Leader: Group 1, Member: 2, 3 |\n| maria_ds | testPassword | USER | Leader: Group 3, Member: 1 |\n| alex_ml | testPassword | USER | Member: 1, 3 |\n| elena_ai | testPassword | USER | Member: 1, 3 |\n| george_dev | testPassword | USER | Member: 2 |\n| sophia_fe | testPassword | USER | Member: 2 |\n\n## Resources (seeded by V6)\n| ID | Dataset Owner | Model Owner | Training ID |\n|----|--------------|-------------|-------------|\n| 1 | nickriz | nickriz | 1 |\n| 2 | maria_ds | maria_ds | 2 |\n| 3 | alex_ml | alex_ml | 3 |\n\n## Groups (seeded by V5)\n| ID | Name | Leader | Members |\n|----|------|--------|---------|\n| 1 | ML Research Team | nickriz | maria_ds, alex_ml, elena_ai |\n| 2 | AI Development Team | bigspy | nickriz, george_dev, sophia_fe |\n| 3 | Data Science Lab | maria_ds | alex_ml, elena_ai, nickriz |",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "base_url", "value": "http://localhost:8080", "type": "string" },
+		{ "key": "token_nickriz", "value": "", "type": "string" },
+		{ "key": "token_bigspy", "value": "", "type": "string" },
+		{ "key": "token_maria_ds", "value": "", "type": "string" },
+		{ "key": "token_alex_ml", "value": "", "type": "string" },
+		{ "key": "token_elena_ai", "value": "", "type": "string" },
+		{ "key": "token_george_dev", "value": "", "type": "string" },
+		{ "key": "token_sophia_fe", "value": "", "type": "string" },
+		{ "key": "dataset_id_nickriz", "value": "1", "type": "string" },
+		{ "key": "dataset_id_maria", "value": "2", "type": "string" },
+		{ "key": "dataset_id_alex", "value": "3", "type": "string" },
+		{ "key": "model_id_nickriz", "value": "1", "type": "string" },
+		{ "key": "model_id_maria", "value": "2", "type": "string" },
+		{ "key": "model_id_alex", "value": "3", "type": "string" },
+		{ "key": "training_id_nickriz", "value": "1", "type": "string" },
+		{ "key": "training_id_maria", "value": "2", "type": "string" },
+		{ "key": "training_id_alex", "value": "3", "type": "string" },
+		{ "key": "group_id_ml_research", "value": "1", "type": "string" },
+		{ "key": "group_id_ai_dev", "value": "2", "type": "string" },
+		{ "key": "group_id_data_science", "value": "3", "type": "string" },
+		{ "key": "new_group_id", "value": "", "type": "string" },
+		{ "key": "pipeline_copy_id", "value": "", "type": "string" }
+	],
+	"item": [
+		{
+			"name": "00 - Auth (Login All Users)",
+			"description": "Login as each user to obtain JWT tokens. Run this folder FIRST before any other tests.",
+			"item": [
+				{
+					"name": "Login as nickriz (USER, leader Group 1)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.token) {",
+									"    pm.collectionVariables.set('token_nickriz', jsonData.dataHeader.token);",
+									"    console.log('Token saved for nickriz');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"nickriz\",\n    \"password\": \"userPassword\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] }
+					}
+				},
+				{
+					"name": "Login as bigspy (ADMIN, leader Group 2)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.token) {",
+									"    pm.collectionVariables.set('token_bigspy', jsonData.dataHeader.token);",
+									"    console.log('Token saved for bigspy');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"bigspy\",\n    \"password\": \"adminPassword\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] }
+					}
+				},
+				{
+					"name": "Login as maria_ds (USER, leader Group 3, member Group 1)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.token) {",
+									"    pm.collectionVariables.set('token_maria_ds', jsonData.dataHeader.token);",
+									"    console.log('Token saved for maria_ds');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"maria_ds\",\n    \"password\": \"testPassword\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] }
+					}
+				},
+				{
+					"name": "Login as alex_ml (USER, member Groups 1, 3)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.token) {",
+									"    pm.collectionVariables.set('token_alex_ml', jsonData.dataHeader.token);",
+									"    console.log('Token saved for alex_ml');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"alex_ml\",\n    \"password\": \"testPassword\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] }
+					}
+				},
+				{
+					"name": "Login as elena_ai (USER, member Groups 1, 3)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.token) {",
+									"    pm.collectionVariables.set('token_elena_ai', jsonData.dataHeader.token);",
+									"    console.log('Token saved for elena_ai');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"elena_ai\",\n    \"password\": \"testPassword\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] }
+					}
+				},
+				{
+					"name": "Login as george_dev (USER, member Group 2)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.token) {",
+									"    pm.collectionVariables.set('token_george_dev', jsonData.dataHeader.token);",
+									"    console.log('Token saved for george_dev');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"george_dev\",\n    \"password\": \"testPassword\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] }
+					}
+				},
+				{
+					"name": "Login as sophia_fe (USER, member Group 2)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.token) {",
+									"    pm.collectionVariables.set('token_sophia_fe', jsonData.dataHeader.token);",
+									"    console.log('Token saved for sophia_fe');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"sophia_fe\",\n    \"password\": \"testPassword\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "01 - Group Management",
+			"description": "Test group CRUD operations: create, add/remove members, list, delete.",
+			"item": [
+				{
+					"name": "[nickriz] Get My Groups (all)",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/groups/my-groups", "host": ["{{base_url}}"], "path": ["api", "groups", "my-groups"] }
+					}
+				},
+				{
+					"name": "[nickriz] Get Groups I Lead",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/groups/leading", "host": ["{{base_url}}"], "path": ["api", "groups", "leading"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Get Groups I'm Member Of",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": { "raw": "{{base_url}}/api/groups/member-of", "host": ["{{base_url}}"], "path": ["api", "groups", "member-of"] }
+					}
+				},
+				{
+					"name": "[nickriz] Get Group 1 Details",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/groups/{{group_id_ml_research}}", "host": ["{{base_url}}"], "path": ["api", "groups", "{{group_id_ml_research}}"] }
+					}
+				},
+				{
+					"name": "[nickriz] Create New Test Group",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Group created', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.id) {",
+									"    pm.collectionVariables.set('new_group_id', jsonData.id);",
+									"    console.log('New group ID saved: ' + jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Sharing Test Group\",\n    \"description\": \"Temporary group created for testing sharing features\",\n    \"initialMemberUsernames\": [\"alex_ml\", \"george_dev\"]\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/groups", "host": ["{{base_url}}"], "path": ["api", "groups"] }
+					}
+				},
+				{
+					"name": "[nickriz] Add sophia_fe to New Group",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"sophia_fe\"]\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/groups/{{new_group_id}}/members", "host": ["{{base_url}}"], "path": ["api", "groups", "{{new_group_id}}", "members"] }
+					}
+				},
+				{
+					"name": "[nickriz] Remove george_dev from New Group",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"george_dev\"]\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/groups/{{new_group_id}}/members", "host": ["{{base_url}}"], "path": ["api", "groups", "{{new_group_id}}", "members"] }
+					}
+				},
+				{
+					"name": "[nickriz] Delete New Test Group",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/groups/{{new_group_id}}", "host": ["{{base_url}}"], "path": ["api", "groups", "{{new_group_id}}"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "02 - Dataset Sharing (Direct User-to-User)",
+			"description": "Test sharing datasets directly between users.\n\nScenarios:\n- Owner shares with single user\n- Owner shares with multiple users\n- Recipient copies shared dataset\n- Recipient declines shared dataset\n- Owner removes user from share\n- Admin copies dataset for another user",
+			"item": [
+				{
+					"name": "[nickriz] Share Dataset 1 with maria_ds",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"maria_ds\"],\n    \"comment\": \"Sharing Iris dataset for your analysis\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}"] }
+					}
+				},
+				{
+					"name": "[nickriz] Share Dataset 1 with alex_ml AND elena_ai",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"alex_ml\", \"elena_ai\"],\n    \"comment\": \"Sharing with ML team for collaborative work\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Copy Shared Dataset 1 (to own collection)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Dataset copied', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.dataHeader && jsonData.dataHeader.id) {",
+									"    console.log('Copied dataset ID: ' + jsonData.dataHeader.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/copy", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}", "copy"] }
+					}
+				},
+				{
+					"name": "[elena_ai] Decline Shared Dataset 1",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_elena_ai}}" }],
+						"url": {
+							"raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/decline?targetUsername=elena_ai&comments=Not needed for my current research",
+							"host": ["{{base_url}}"],
+							"path": ["dataset", "share", "{{dataset_id_nickriz}}", "decline"],
+							"query": [
+								{ "key": "targetUsername", "value": "elena_ai" },
+								{ "key": "comments", "value": "Not needed for my current research" }
+							]
+						}
+					}
+				},
+				{
+					"name": "[nickriz] Remove alex_ml from Dataset 1 share",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"alex_ml\"],\n    \"comments\": \"Removing access - project completed\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/share", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}", "share"] }
+					}
+				},
+				{
+					"name": "[bigspy/ADMIN] Copy Dataset 1 for george_dev",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Admin copy successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_bigspy}}" }],
+						"url": {
+							"raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/copy?targetUsername=george_dev",
+							"host": ["{{base_url}}"],
+							"path": ["dataset", "share", "{{dataset_id_nickriz}}", "copy"],
+							"query": [
+								{ "key": "targetUsername", "value": "george_dev" }
+							]
+						}
+					}
+				},
+				{
+					"name": "[maria_ds] Share Dataset 2 with nickriz",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"nickriz\"],\n    \"comment\": \"Housing dataset - might be useful for your regression work\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_maria}}", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_maria}}"] }
+					}
+				},
+				{
+					"name": "[alex_ml] Share Dataset 3 with elena_ai and sophia_fe",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"elena_ai\", \"sophia_fe\"],\n    \"comment\": \"Customer segments data for the team\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_alex}}", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_alex}}"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "03 - Dataset Sharing (Group)",
+			"description": "Test sharing datasets with entire groups.\n\nScenarios:\n- Leader shares own dataset with their group\n- Member shares own dataset with group they belong to\n- Leader removes group share\n- Cross-group sharing (member of one group, leader of another)",
+			"item": [
+				{
+					"name": "[nickriz/LEADER] Share Dataset 1 with Group 1 (ML Research Team)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ml_research}},\n    \"comment\": \"Sharing Iris dataset with the entire ML Research team\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/share-group", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[maria_ds/MEMBER] Share Dataset 2 with Group 1 (ML Research Team)",
+					"description": "maria_ds is a MEMBER of Group 1 (not the leader), but she OWNS dataset 2.\nShe can share her own dataset with any group she belongs to.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ml_research}},\n    \"comment\": \"Housing dataset for the team - shared as group member\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_maria}}/share-group", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_maria}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[maria_ds/LEADER] Share Dataset 2 with Group 3 (Data Science Lab)",
+					"description": "maria_ds is the LEADER of Group 3 and OWNER of dataset 2.\nLeader sharing their own resource with their own group.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_data_science}},\n    \"comment\": \"Housing data for our Data Science Lab projects\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_maria}}/share-group", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_maria}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[alex_ml/MEMBER] Share Dataset 3 with Group 3 (Data Science Lab)",
+					"description": "alex_ml is a MEMBER of Group 3 (not the leader), but he OWNS dataset 3.\nMember sharing their own resource with a group they belong to.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_data_science}},\n    \"comment\": \"Customer segmentation data - shared as group member\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_alex}}/share-group", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_alex}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[alex_ml/MEMBER] Share Dataset 3 with Group 1 (ML Research Team)",
+					"description": "alex_ml is a MEMBER of Group 1 and OWNS dataset 3.\nMember sharing own dataset with another group they're in.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ml_research}},\n    \"comment\": \"Sharing customer data with ML Research team too\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_alex}}/share-group", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_alex}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[bigspy/ADMIN] Share Dataset 1 with Group 2 (AI Dev Team)",
+					"description": "bigspy is ADMIN and leader of Group 2. Admin can share any dataset with any group.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_bigspy}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ai_dev}},\n    \"comment\": \"Admin sharing dataset with AI Dev team\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/share-group", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[nickriz/LEADER] Remove Group 1 from Dataset 1 share",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": {
+							"raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/share-group/{{group_id_ml_research}}?comment=Revoking group access - analysis period ended",
+							"host": ["{{base_url}}"],
+							"path": ["dataset", "share", "{{dataset_id_nickriz}}", "share-group", "{{group_id_ml_research}}"],
+							"query": [
+								{ "key": "comment", "value": "Revoking group access - analysis period ended" }
+							]
+						}
+					}
+				},
+				{
+					"name": "[maria_ds/OWNER] Remove Group 3 from Dataset 2 share",
+					"description": "Dataset owner removes their own group share.",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": {
+							"raw": "{{base_url}}/dataset/share/{{dataset_id_maria}}/share-group/{{group_id_data_science}}?comment=Project phase completed",
+							"host": ["{{base_url}}"],
+							"path": ["dataset", "share", "{{dataset_id_maria}}", "share-group", "{{group_id_data_science}}"],
+							"query": [
+								{ "key": "comment", "value": "Project phase completed" }
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "04 - Model Sharing (Direct User-to-User)",
+			"description": "Test sharing models directly between users.\n\nScenarios:\n- Owner shares with single user\n- Owner shares with multiple users\n- Owner revokes share from specific user\n- Owner revokes all shares",
+			"item": [
+				{
+					"name": "[nickriz] Share Model 1 with maria_ds",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"maria_ds\"],\n    \"comment\": \"Sharing my Iris classifier model\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_nickriz}}/share", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_nickriz}}", "share"] }
+					}
+				},
+				{
+					"name": "[nickriz] Share Model 1 with alex_ml AND elena_ai",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"alex_ml\", \"elena_ai\"],\n    \"comment\": \"Model for the team to evaluate\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_nickriz}}/share", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_nickriz}}", "share"] }
+					}
+				},
+				{
+					"name": "[nickriz] Revoke Model 1 share from elena_ai only",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"elena_ai\"],\n    \"comment\": \"Revoking - evaluation complete\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_nickriz}}/revoke", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_nickriz}}", "revoke"] }
+					}
+				},
+				{
+					"name": "[nickriz] Revoke ALL Model 1 shares",
+					"description": "Send empty/null usernames to revoke all shares at once.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": null,\n    \"comment\": \"Revoking all access to this model\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_nickriz}}/revoke", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_nickriz}}", "revoke"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Share Model 2 with nickriz and alex_ml",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"nickriz\", \"alex_ml\"],\n    \"comment\": \"Housing price prediction model for review\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_maria}}/share", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_maria}}", "share"] }
+					}
+				},
+				{
+					"name": "[alex_ml] Share Model 3 with george_dev and sophia_fe",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"george_dev\", \"sophia_fe\"],\n    \"comment\": \"Customer segmenter model for frontend integration\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_alex}}/share", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_alex}}", "share"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "05 - Model Sharing (Group)",
+			"description": "Test sharing models with entire groups.\n\nScenarios:\n- Leader shares own model with their group\n- Member shares own model with group they belong to\n- Remove group share",
+			"item": [
+				{
+					"name": "[nickriz/LEADER] Share Model 1 with Group 1 (ML Research Team)",
+					"description": "nickriz is the LEADER of Group 1 and OWNER of Model 1.\nLeader sharing their own model with their group.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ml_research}},\n    \"comment\": \"Iris classifier for the entire ML Research team\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_nickriz}}/share-group", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_nickriz}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[maria_ds/MEMBER] Share Model 2 with Group 1 (ML Research Team)",
+					"description": "maria_ds is a MEMBER of Group 1 (not the leader), but she OWNS Model 2.\nMember sharing her own model with a group she belongs to.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ml_research}},\n    \"comment\": \"Housing predictor model - sharing as group member\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_maria}}/share-group", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_maria}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[maria_ds/LEADER] Share Model 2 with Group 3 (Data Science Lab)",
+					"description": "maria_ds is the LEADER of Group 3 and OWNER of Model 2.\nLeader sharing their model with their own group.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_data_science}},\n    \"comment\": \"Housing model for Data Science Lab\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_maria}}/share-group", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_maria}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[alex_ml/MEMBER] Share Model 3 with Group 3 (Data Science Lab)",
+					"description": "alex_ml is a MEMBER of Group 3 and OWNER of Model 3.\nMember sharing own model with a group they belong to.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_data_science}},\n    \"comment\": \"Customer segmenter for the lab - shared as member\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_alex}}/share-group", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_alex}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[alex_ml/MEMBER] Share Model 3 with Group 1 (ML Research Team)",
+					"description": "alex_ml is MEMBER of Group 1 and OWNER of Model 3.\nMember sharing own model with another group they're in.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ml_research}},\n    \"comment\": \"Sharing customer model with ML Research team\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_alex}}/share-group", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_alex}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[nickriz/LEADER] Remove Group 1 from Model 1 share",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": {
+							"raw": "{{base_url}}/api/models/sharing/{{model_id_nickriz}}/share-group/{{group_id_ml_research}}?comment=Revoking group model access",
+							"host": ["{{base_url}}"],
+							"path": ["api", "models", "sharing", "{{model_id_nickriz}}", "share-group", "{{group_id_ml_research}}"],
+							"query": [
+								{ "key": "comment", "value": "Revoking group model access" }
+							]
+						}
+					}
+				},
+				{
+					"name": "[maria_ds/OWNER] Remove Group 3 from Model 2 share",
+					"description": "Owner removes group share from their own model.",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": {
+							"raw": "{{base_url}}/api/models/sharing/{{model_id_maria}}/share-group/{{group_id_data_science}}?comment=Project review complete",
+							"host": ["{{base_url}}"],
+							"path": ["api", "models", "sharing", "{{model_id_maria}}", "share-group", "{{group_id_data_science}}"],
+							"query": [
+								{ "key": "comment", "value": "Project review complete" }
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "06 - Pipeline Copy (Direct User-to-User)",
+			"description": "Test copying entire pipelines (dataset + training + model) between users.\n\nScenarios:\n- Owner copies pipeline to another user\n- View sent/received pipeline copies\n- Get pipeline copy details with mappings",
+			"item": [
+				{
+					"name": "[nickriz] Copy Pipeline (Training 1) to maria_ds",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Pipeline copy initiated', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData.pipelineCopyId) {",
+									"    pm.collectionVariables.set('pipeline_copy_id', jsonData.pipelineCopyId);",
+									"    console.log('Pipeline copy ID saved: ' + jsonData.pipelineCopyId);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetUsername\": \"maria_ds\",\n    \"comment\": \"Copying my Iris classification pipeline for you\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_nickriz}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_nickriz}}", "copy"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Copy Pipeline (Training 2) to alex_ml",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetUsername\": \"alex_ml\",\n    \"comment\": \"Housing prediction pipeline for your experiments\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_maria}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_maria}}", "copy"] }
+					}
+				},
+				{
+					"name": "[alex_ml] Copy Pipeline (Training 3) to elena_ai",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetUsername\": \"elena_ai\",\n    \"comment\": \"Customer segmentation pipeline\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_alex}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_alex}}", "copy"] }
+					}
+				},
+				{
+					"name": "[nickriz] Get Pipeline Copy Details",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/pipeline/copy/{{pipeline_copy_id}}", "host": ["{{base_url}}"], "path": ["api", "pipeline", "copy", "{{pipeline_copy_id}}"] }
+					}
+				},
+				{
+					"name": "[nickriz] Get My Sent Pipeline Copies",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/pipeline/copies/sent", "host": ["{{base_url}}"], "path": ["api", "pipeline", "copies", "sent"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Get My Received Pipeline Copies",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": { "raw": "{{base_url}}/api/pipeline/copies/received", "host": ["{{base_url}}"], "path": ["api", "pipeline", "copies", "received"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Get My Sent Pipeline Copies",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": { "raw": "{{base_url}}/api/pipeline/copies/sent", "host": ["{{base_url}}"], "path": ["api", "pipeline", "copies", "sent"] }
+					}
+				},
+				{
+					"name": "[alex_ml] Get My Sent Pipeline Copies",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" }],
+						"url": { "raw": "{{base_url}}/api/pipeline/copies/sent", "host": ["{{base_url}}"], "path": ["api", "pipeline", "copies", "sent"] }
+					}
+				},
+				{
+					"name": "[elena_ai] Get My Received Pipeline Copies",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_elena_ai}}" }],
+						"url": { "raw": "{{base_url}}/api/pipeline/copies/received", "host": ["{{base_url}}"], "path": ["api", "pipeline", "copies", "received"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "07 - Pipeline Copy (Group)",
+			"description": "Test copying entire pipelines to all members of a group.\n\nScenarios:\n- Leader copies own pipeline to their group\n- Member copies own pipeline to a group they belong to\n- Using both the request body approach and the URL path approach",
+			"item": [
+				{
+					"name": "[nickriz/LEADER] Copy Pipeline 1 to Group 1 via request body",
+					"description": "nickriz is LEADER of Group 1 and OWNER of Training 1.\nUsing the PipelineCopyRequest body with targetGroupId.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetGroupId\": {{group_id_ml_research}},\n    \"comment\": \"Copying Iris pipeline to entire ML Research team\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_nickriz}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_nickriz}}", "copy"] }
+					}
+				},
+				{
+					"name": "[nickriz/LEADER] Copy Pipeline 1 to Group 1 via URL path",
+					"description": "Alternative approach: using the dedicated /copy-to-group/{groupId} endpoint.",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_nickriz}}/copy-to-group/{{group_id_ml_research}}", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_nickriz}}", "copy-to-group", "{{group_id_ml_research}}"] }
+					}
+				},
+				{
+					"name": "[maria_ds/MEMBER] Copy Pipeline 2 to Group 1 (ML Research Team)",
+					"description": "maria_ds is a MEMBER of Group 1 and OWNER of Training 2.\nMember copying their own pipeline to a group they belong to.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetGroupId\": {{group_id_ml_research}},\n    \"comment\": \"Housing pipeline for the team - shared as member\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_maria}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_maria}}", "copy"] }
+					}
+				},
+				{
+					"name": "[maria_ds/LEADER] Copy Pipeline 2 to Group 3 (Data Science Lab)",
+					"description": "maria_ds is LEADER of Group 3 and OWNER of Training 2.\nLeader copying their own pipeline to their group.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetGroupId\": {{group_id_data_science}},\n    \"comment\": \"Housing pipeline for Data Science Lab\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_maria}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_maria}}", "copy"] }
+					}
+				},
+				{
+					"name": "[alex_ml/MEMBER] Copy Pipeline 3 to Group 3 (Data Science Lab)",
+					"description": "alex_ml is MEMBER of Group 3 and OWNER of Training 3.\nMember sharing own pipeline with a group they belong to.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetGroupId\": {{group_id_data_science}},\n    \"comment\": \"Customer segmentation pipeline - shared as member\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_alex}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_alex}}", "copy"] }
+					}
+				},
+				{
+					"name": "[alex_ml/MEMBER] Copy Pipeline 3 to Group 1 (ML Research Team)",
+					"description": "alex_ml is MEMBER of Group 1 and OWNER of Training 3.\nMember sharing own pipeline with another group they're in.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetGroupId\": {{group_id_ml_research}},\n    \"comment\": \"Customer pipeline for ML Research team too\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_alex}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_alex}}", "copy"] }
+					}
+				},
+				{
+					"name": "[bigspy/ADMIN] Copy Pipeline 1 to Group 2 (AI Dev Team)",
+					"description": "bigspy is ADMIN and LEADER of Group 2.\nAdmin can copy any pipeline to any group.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_bigspy}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"targetGroupId\": {{group_id_ai_dev}},\n    \"comment\": \"Admin sharing pipeline with AI Dev team\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/pipeline/{{training_id_nickriz}}/copy", "host": ["{{base_url}}"], "path": ["api", "pipeline", "{{training_id_nickriz}}", "copy"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "08 - Negative Tests (Permission Denied)",
+			"description": "Test that sharing is correctly denied when the user doesn't have permission.\nThese requests SHOULD fail with 403/400/401 errors.",
+			"item": [
+				{
+					"name": "[george_dev] Try sharing nickriz's Dataset 1 (NOT OWNER - should fail)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should be forbidden', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 403]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_george_dev}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"sophia_fe\"],\n    \"comment\": \"This should fail - I don't own this dataset\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}"] }
+					}
+				},
+				{
+					"name": "[george_dev] Try sharing nickriz's Model 1 (NOT OWNER - should fail)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should be forbidden', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 403]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_george_dev}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"sophia_fe\"],\n    \"comment\": \"This should fail - I don't own this model\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/models/sharing/{{model_id_nickriz}}/share", "host": ["{{base_url}}"], "path": ["api", "models", "sharing", "{{model_id_nickriz}}", "share"] }
+					}
+				},
+				{
+					"name": "[george_dev] Try sharing Dataset 1 with Group 2 (NOT OWNER - should fail)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should be forbidden', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 403]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_george_dev}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"groupId\": {{group_id_ai_dev}},\n    \"comment\": \"Should fail - not dataset owner\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}/share-group", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}", "share-group"] }
+					}
+				},
+				{
+					"name": "[sophia_fe] Try copying unshared Dataset 2 (NO ACCESS - should fail)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should be forbidden', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 403]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_sophia_fe}}" }],
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_maria}}/copy", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_maria}}", "copy"] }
+					}
+				},
+				{
+					"name": "No Auth - Try sharing (UNAUTHENTICATED - should fail)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should be unauthorized', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([401, 403]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"nickriz\"],\n    \"comment\": \"No auth token - should fail\"\n}"
+						},
+						"url": { "raw": "{{base_url}}/dataset/share/{{dataset_id_nickriz}}", "host": ["{{base_url}}"], "path": ["dataset", "share", "{{dataset_id_nickriz}}"] }
+					}
+				},
+				{
+					"name": "[elena_ai] Try adding member to Group 1 (NOT LEADER - should fail)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Should be forbidden - not group leader', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 403]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{token_elena_ai}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usernames\": [\"sophia_fe\"]\n}"
+						},
+						"url": { "raw": "{{base_url}}/api/groups/{{group_id_ml_research}}/members", "host": ["{{base_url}}"], "path": ["api", "groups", "{{group_id_ml_research}}", "members"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "09 - Utility & Verification",
+			"description": "Helper requests to verify sharing state and view resources.",
+			"item": [
+				{
+					"name": "[nickriz] Get My Datasets",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/datasets", "host": ["{{base_url}}"], "path": ["api", "datasets"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Get My Datasets",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": { "raw": "{{base_url}}/api/datasets", "host": ["{{base_url}}"], "path": ["api", "datasets"] }
+					}
+				},
+				{
+					"name": "[nickriz] Get My Models",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/models", "host": ["{{base_url}}"], "path": ["api", "models"] }
+					}
+				},
+				{
+					"name": "[maria_ds] Get My Models (should include shared models)",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_maria_ds}}" }],
+						"url": { "raw": "{{base_url}}/api/models", "host": ["{{base_url}}"], "path": ["api", "models"] }
+					}
+				},
+				{
+					"name": "[alex_ml] Get My Models (should include shared models)",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_alex_ml}}" }],
+						"url": { "raw": "{{base_url}}/api/models", "host": ["{{base_url}}"], "path": ["api", "models"] }
+					}
+				},
+				{
+					"name": "[bigspy/ADMIN] Get All Datasets",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_bigspy}}" }],
+						"url": { "raw": "{{base_url}}/api/datasets", "host": ["{{base_url}}"], "path": ["api", "datasets"] }
+					}
+				},
+				{
+					"name": "[nickriz] Get My Trainings",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token_nickriz}}" }],
+						"url": { "raw": "{{base_url}}/api/train/trainings", "host": ["{{base_url}}"], "path": ["api", "train", "trainings"] }
+					}
+				}
+			]
+		}
+	]
+}
