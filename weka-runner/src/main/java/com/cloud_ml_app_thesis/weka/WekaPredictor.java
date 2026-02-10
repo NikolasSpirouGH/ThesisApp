@@ -14,7 +14,6 @@ import weka.core.Instances;
 import weka.core.SerializationHelper;
 import weka.core.converters.CSVLoader;
 import weka.filters.Filter;
-import weka.filters.unsupervised.attribute.NumericToNominal;
 import weka.filters.unsupervised.attribute.Remove;
 
 import java.io.File;
@@ -114,7 +113,8 @@ public class WekaPredictor {
         // 3b. Select columns and add placeholder target column if missing
         // This matches the behavior of DatasetUtil.selectColumns() in the backend
         if (!"CLUSTERING".equalsIgnoreCase(algorithmType)) {
-            testData = selectColumnsAndEnsureTarget(testData, basicAttributesColumns, targetColumn);
+            // Pass classLabels so classification gets a proper nominal attribute
+            testData = selectColumnsAndEnsureTarget(testData, basicAttributesColumns, targetColumn, classLabels);
         } else {
             // For clustering, just select the basic attributes (no target column)
             if (basicAttributesColumns != null && !basicAttributesColumns.isEmpty()) {
@@ -157,8 +157,7 @@ public class WekaPredictor {
             List<String> classLabels, ObjectNode metadata) throws Exception {
         log.info("Running classification predictions...");
 
-        // Class index should already be set by ensureTargetColumnExists
-        // Only set if not already set
+        // Class index should already be set by selectColumnsAndEnsureTarget
         if (data.classIndex() < 0) {
             if (targetColumn != null && data.attribute(targetColumn) != null) {
                 data.setClassIndex(data.attribute(targetColumn).index());
@@ -168,20 +167,24 @@ public class WekaPredictor {
         }
         log.info("Using class index: {} ({})", data.classIndex(), data.classAttribute().name());
 
-        // Convert numeric class to nominal if needed (to match training)
-        if (data.classAttribute().isNumeric()) {
-            log.info("Converting numeric class to nominal for prediction");
-            NumericToNominal convert = new NumericToNominal();
-            convert.setAttributeIndices(String.valueOf(data.classIndex() + 1));
-            convert.setInputFormat(data);
-            data = Filter.useFilter(data, convert);
-        }
-
-        // Class labels must be provided by backend (extracted from metrics.json during training)
+        // Class labels must be provided by backend (extracted from training)
         if (classLabels == null || classLabels.isEmpty()) {
             throw new IllegalStateException("❌ No class labels provided in params.json for classification");
         }
-        log.info("Class labels: {}", classLabels);
+
+        // Verify class attribute is nominal (should be set up by selectColumnsAndEnsureTarget)
+        Attribute classAttr = data.classAttribute();
+        if (classAttr.isNumeric()) {
+            throw new IllegalStateException("❌ Class attribute is numeric but classification requires nominal. " +
+                    "Ensure classLabels are provided in params.json.");
+        }
+
+        // Log class structure for debugging
+        log.info("Class attribute '{}' has {} values: {}", classAttr.name(), classAttr.numValues(),
+                java.util.stream.IntStream.range(0, classAttr.numValues())
+                        .mapToObj(classAttr::value)
+                        .collect(java.util.stream.Collectors.toList()));
+        log.info("Expected class labels from training: {}", classLabels);
 
         List<String> predictions = new ArrayList<>();
 
@@ -334,9 +337,10 @@ public class WekaPredictor {
      * @param data                    The dataset
      * @param basicAttributesColumns  Comma-separated 1-based column indices (e.g., "1,2,3")
      * @param targetColumn            The target column (1-based index)
+     * @param classLabels             Class labels from training (for classification) - if not empty, creates nominal attribute
      * @return Modified dataset with selected columns and target
      */
-    private Instances selectColumnsAndEnsureTarget(Instances data, String basicAttributesColumns, String targetColumn) throws Exception {
+    private Instances selectColumnsAndEnsureTarget(Instances data, String basicAttributesColumns, String targetColumn, List<String> classLabels) throws Exception {
         log.info("Selecting columns: basicAttributes={}, target={}", basicAttributesColumns, targetColumn);
 
         // Parse target column index (1-based to 0-based)
@@ -430,10 +434,19 @@ public class WekaPredictor {
         // Check if target column exists in filtered data, if not add it
         Attribute classAttr = filteredData.attribute(targetAttrName);
         if ((classAttr == null || needsPlaceholder) && targetAttrName != null) {
-            log.info("Target column '{}' not found in filtered data. Adding placeholder numeric column.", targetAttrName);
-
-            // Add a new numeric attribute with missing values (like backend does for REGRESSION)
-            filteredData.insertAttributeAt(new Attribute(targetAttrName), filteredData.numAttributes());
+            // For CLASSIFICATION: create nominal attribute with exact training class labels
+            // For REGRESSION: create numeric attribute
+            if (classLabels != null && !classLabels.isEmpty()) {
+                log.info("Target column '{}' not found. Adding NOMINAL placeholder with training class labels: {}",
+                        targetAttrName, classLabels);
+                // Create nominal attribute with the exact same values as training - critical for Weka classifiers
+                Attribute nominalAttr = new Attribute(targetAttrName, new ArrayList<>(classLabels));
+                filteredData.insertAttributeAt(nominalAttr, filteredData.numAttributes());
+            } else {
+                log.info("Target column '{}' not found. Adding NUMERIC placeholder for regression.", targetAttrName);
+                // Add a new numeric attribute with missing values (for REGRESSION)
+                filteredData.insertAttributeAt(new Attribute(targetAttrName), filteredData.numAttributes());
+            }
 
             // Set all values to missing
             int newTargetIdx = filteredData.numAttributes() - 1;
