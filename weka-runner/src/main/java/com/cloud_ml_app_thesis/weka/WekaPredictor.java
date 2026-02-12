@@ -264,14 +264,13 @@ public class WekaPredictor {
      * Writes predictions to CSV - replaces "?" in target column with predicted values.
      * Same logic as DatasetUtil.replaceQuestionMarksWithPredictionResultsAsCSV but
      * always replaces missing values in target column (not just when named "class").
+     *
+     * For clustering (classIndex == -1), adds a new "cluster" column with predictions.
      */
     private void writePredictionsCsv(Instances data, List<String> predictions) throws Exception {
         Path outputFile = modelDir.resolve("predictions.csv");
         int classIndex = data.classIndex();
 
-        // For classification predictions, we don't set values on the data instances
-        // because the class attribute may be a numeric placeholder.
-        // Instead, we write predictions directly to CSV.
         // Detect if predictions are numeric (regression) or string labels (classification/clustering)
         boolean predictionsAreNumeric = false;
         if (!predictions.isEmpty()) {
@@ -283,7 +282,11 @@ public class WekaPredictor {
             }
         }
 
-        log.info("Writing predictions CSV. Class index: {}, predictions are numeric: {}", classIndex, predictionsAreNumeric);
+        // Check if this is clustering (classIndex == -1)
+        boolean isClustering = classIndex < 0;
+
+        log.info("Writing predictions CSV. Class index: {}, predictions are numeric: {}, is clustering: {}",
+                classIndex, predictionsAreNumeric, isClustering);
 
         // For regression, update the data instances
         if (classIndex >= 0 && predictionsAreNumeric) {
@@ -303,6 +306,10 @@ public class WekaPredictor {
                 if (i > 0) header.append(",");
                 header.append(data.attribute(i).name());
             }
+            // For clustering, add "cluster" column at the end
+            if (isClustering) {
+                header.append(",cluster");
+            }
             writer.println(header);
 
             // Data rows
@@ -313,7 +320,7 @@ public class WekaPredictor {
                 for (int j = 0; j < data.numAttributes(); j++) {
                     if (j > 0) row.append(",");
 
-                    // For the class column with non-numeric predictions (classification/clustering),
+                    // For the class column with non-numeric predictions (classification),
                     // write the prediction string directly
                     if (j == classIndex && !predictionsAreNumeric) {
                         row.append(predictions.get(i));
@@ -323,6 +330,12 @@ public class WekaPredictor {
                         row.append(instance.stringValue(j));
                     }
                 }
+
+                // For clustering, append the cluster assignment at the end
+                if (isClustering) {
+                    row.append(",").append(predictions.get(i));
+                }
+
                 writer.println(row);
             }
         }
