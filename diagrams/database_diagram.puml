@@ -1,0 +1,765 @@
+@startuml Database_Diagram
+' ============================================================
+' Διάγραμμα Βάσης Δεδομένων (ER Diagram)
+' Cloud-native ML Platform (MLaaS) — Thesis
+' ============================================================
+' Σημείωση: Κάθε γραμμή-σχέση χρησιμοποιεί κατευθυντική
+' υπόδειξη ώστε να μην ευθυγραμμίζεται με κάποια άλλη.
+' ============================================================
+
+skinparam linetype ortho
+hide circle
+
+skinparam entity {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  FontSize 10
+  FontName Arial
+}
+
+skinparam BackgroundColor white
+
+' ============================================================
+' Χρωματικός κώδικας:
+'   #FFFFFF  Κύριοι πίνακες
+'   #E8F4FD  Πίνακες σταθερών τιμών (CONST_*)
+'   #FFF3E0  Πίνακες κοινοποίησης (shares)
+'   #F3E5F5  Πίνακες ιστορικού / ελέγχου (history)
+'   #E8F5E9  Πίνακες σύνδεσης (join tables)
+' ============================================================
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                 ΔΙΑΧΕΙΡΙΣΗ ΧΡΗΣΤΩΝ                       ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "CONST_USER_STATUSES" as UST #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar
+}
+
+entity "users" as U {
+  * id : UUID <<PK>>
+  --
+  * username : varchar <<unique>>
+  * email : varchar <<unique>>
+  * password : varchar
+  first_name : varchar
+  last_name : varchar
+  age : integer
+  profession : varchar
+  country : varchar
+  --
+  * status_id : integer <<FK>>
+}
+
+entity "roles" as R #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar
+}
+
+entity "user_roles" as UR #E8F5E9 {
+  * user_id : UUID <<FK>>
+  * role_id : integer <<FK>>
+}
+
+entity "jwt_tokens" as JWT {
+  * id : UUID <<PK>>
+  --
+  * token : varchar(1000) <<unique>>
+  * revoked : boolean
+  * expired : boolean
+  created_at : timestamp
+  revoked_at : timestamp
+  --
+  * user_id : UUID <<FK>>
+}
+
+entity "tokens" as PRT {
+  * id : bigint <<PK>>
+  --
+  * token : varchar <<unique>>
+  * expiry_date : timestamp
+  --
+  * user_id : UUID <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                 ΔΙΑΧΕΙΡΙΣΗ ΟΜΑΔΩΝ                        ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "groups" as G {
+  * id : integer <<PK>>
+  --
+  * name : varchar(100)
+  description : varchar(500)
+  * created_at : timestamp
+  --
+  * leader_id : UUID <<FK>>
+}
+
+entity "group_members" as GM #E8F5E9 {
+  * group_id : integer <<FK>>
+  * user_id : UUID <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                 ΔΙΑΧΕΙΡΙΣΗ ΚΑΤΗΓΟΡΙΩΝ                    ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "categories" as CAT {
+  * id : integer <<PK>>
+  --
+  * name : varchar <<unique>>
+  description : varchar(2000)
+  deleted : boolean
+  --
+  created_by : UUID <<FK>>
+}
+
+entity "category_hierarchy" as CH #E8F5E9 {
+  * parent_id : integer <<FK>>
+  * child_id : integer <<FK>>
+}
+
+entity "CONST_CATEGORY_REQUEST\n_STATUSES" as CRS #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar(1000)
+}
+
+entity "category_requests" as CR {
+  * id : integer <<PK>>
+  --
+  * name : varchar <<unique>>
+  description : varchar(5000)
+  rejection_reason : varchar(5000)
+  * requested_at : timestamp
+  processed_at : timestamp
+  --
+  * status_id : integer <<FK>>
+  * requested_by : UUID <<FK>>
+  processed_by : UUID <<FK>>
+  approved_category_id : integer <<FK>>
+}
+
+entity "category_request\n_parents" as CRP #E8F5E9 {
+  * request_id : integer <<FK>>
+  * category_id : integer <<FK>>
+}
+
+entity "category_history" as CHIST #F3E5F5 {
+  * id : integer <<PK>>
+  --
+  * edited_at : timestamp
+  old_values : varchar(5000)
+  new_values : varchar(5000)
+  comments : varchar(100)
+  initial : boolean
+  --
+  * category_id : integer <<FK>>
+  * edited_by : UUID <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║             ΑΛΓΟΡΙΘΜΟΙ (ΠΡΟΚΑΘΟΡΙΣΜΕΝΟΙ / WEKA)         ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "CONST_ALGORITHM_TYPES" as AT #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+}
+
+entity "algorithms" as ALG {
+  * id : integer <<PK>>
+  --
+  * name : varchar <<unique>>
+  description : varchar(5000)
+  options : varchar(5000)
+  options_description : varchar(5000)
+  default_options : varchar(5000)
+  class_name : varchar
+  --
+  * type_id : integer <<FK>>
+}
+
+entity "algorithm_configurations" as AC {
+  * id : integer <<PK>>
+  --
+  options : varchar
+  --
+  * algorithm_id : integer <<FK>>
+  algorithm_type_id : integer <<FK>>
+  * user_id : UUID <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║              ΑΛΓΟΡΙΘΜΟΙ (ΠΡΟΣΑΡΜΟΣΜΕΝΟΙ / CUSTOM)       ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "CONST_ALGORITHM\n_ACCESSIBILITIES" as CAA #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar
+}
+
+entity "custom_algorithms" as CA {
+  * id : integer <<PK>>
+  --
+  * name : varchar(100)
+  description : varchar(500)
+  * created_at : timestamp
+  * execution_mode : varchar (enum)
+  --
+  * owner_id : UUID <<FK>>
+  accessibility_id : integer <<FK>>
+}
+
+entity "custom_algorithm\n_keywords" as CAK #E8F5E9 {
+  * custom_algorithm_id : integer <<FK>>
+  * keyword : varchar
+}
+
+entity "custom_algorithm_images" as CAI {
+  * id : integer <<PK>>
+  --
+  name : varchar
+  docker_hub_url : varchar
+  docker_tar_key : varchar
+  uploaded_at : timestamp
+  version : varchar
+  is_active : boolean
+  --
+  * custom_algorithm_id : integer <<FK>>
+}
+
+entity "custom_algorithm\n_configurations" as CAC {
+  * id : integer <<PK>>
+  --
+  * algorithm_id : integer <<FK>>
+  * user_id : UUID <<FK>>
+}
+
+entity "algorithm_parameters" as AP {
+  * id : integer <<PK>>
+  --
+  * name : varchar
+  * type : varchar
+  value : varchar
+  description : varchar(200)
+  range : varchar
+  --
+  algorithm_id : integer <<FK>>
+  configuration_id : integer <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║              ΔΙΑΧΕΙΡΙΣΗ ΣΥΝΟΛΩΝ ΔΕΔΟΜΕΝΩΝ                ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "CONST_DATASET\n_ACCESSIBILITIES" as DA #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar
+}
+
+entity "datasets" as DS {
+  * id : integer <<PK>>
+  --
+  original_file_name : varchar
+  * file_name : varchar <<unique>>
+  * file_path : varchar
+  * file_size : bigint
+  * content_type : varchar
+  * upload_date : timestamp
+  description : varchar
+  --
+  * user_id : UUID <<FK>>
+  * category_id : integer <<FK>>
+  * accessibility_id : integer <<FK>>
+}
+
+entity "dataset_configurations" as DC {
+  * id : integer <<PK>>
+  --
+  basic_attributes_columns : varchar
+  target_column : varchar
+  upload_date : timestamp
+  status : varchar (enum)
+  --
+  * dataset_id : integer <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║         ΚΟΙΝΟΠΟΙΗΣΗ ΣΥΝΟΛΩΝ ΔΕΔΟΜΕΝΩΝ                    ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "dataset_shares" as DSH #FFF3E0 {
+  * id : integer <<PK>>
+  --
+  * shared_at : timestamp
+  comment : varchar
+  --
+  * dataset_id : integer <<FK>>
+  * shared_with_user_id : UUID <<FK>>
+  * shared_by_user_id : UUID <<FK>>
+  ..
+  <<unique>> (dataset_id, shared_with_user_id)
+}
+
+entity "dataset_group_shares" as DGS #FFF3E0 {
+  * id : integer <<PK>>
+  --
+  * shared_at : timestamp
+  comment : varchar
+  --
+  * dataset_id : integer <<FK>>
+  * group_id : integer <<FK>>
+  * shared_by_user_id : UUID <<FK>>
+  ..
+  <<unique>> (dataset_id, group_id)
+}
+
+entity "dataset_copies" as DCP #FFF3E0 {
+  * id : integer <<PK>>
+  --
+  copy_date : timestamp
+  --
+  * original_dataset_id : integer <<FK>>
+  * copied_by_user_id : UUID <<FK>>
+  * copy_operated_by_user_id : UUID <<FK>>
+}
+
+entity "CONST_DATASET_SHARE\n_ACTION_TYPES" as DSAT #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  * description : varchar
+}
+
+entity "dataset_share_history" as DSHIST #F3E5F5 {
+  * id : integer <<PK>>
+  --
+  action_at : timestamp
+  comment : varchar
+  --
+  * dataset_id : integer <<FK>>
+  target_user : UUID <<FK>>
+  * action_by_user : UUID <<FK>>
+  * action_type : integer <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                    ΕΚΠΑΙΔΕΥΣΗ                            ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "CONST_TRAINING\n_STATUSES" as TS #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar(1000)
+}
+
+entity "trainings" as T {
+  * id : integer <<PK>>
+  --
+  started_date : timestamp
+  finished_date : timestamp
+  results : varchar(3000)
+  version : integer
+  --
+  * status_id : integer <<FK>>
+  algorithm_configuration_id : integer <<FK>>
+  custom_algorithm_configuration_id : integer <<FK>>
+  * user_id : UUID <<FK>>
+  * dataset_id : integer <<FK>>
+  retrained_from : integer <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                   ΔΙΑΧΕΙΡΙΣΗ ΜΟΝΤΕΛΩΝ                    ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "CONST_MODEL_TYPES" as MT #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+}
+
+entity "CONST_MODEL\n_STATUSES" as MS #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar(1000)
+}
+
+entity "CONST_MODEL\n_ACCESSIBILITIES" as MA #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  * description : varchar
+}
+
+entity "models" as M {
+  * id : integer <<PK>>
+  --
+  model_url : varchar(1000)
+  name : varchar
+  description : varchar(500)
+  data_description : varchar(500)
+  metrics_url : varchar
+  label_mapping_url : varchar(1000)
+  feature_columns_url : varchar(1000)
+  created_at : timestamp
+  finalized : boolean
+  finalization_date : timestamp
+  version : integer
+  --
+  * training_id : integer <<FK>>
+  * model_type_id : integer <<FK>>
+  * status_id : integer <<FK>>
+  * category_id : integer <<FK>>
+  accessibility_id : integer <<FK>>
+}
+
+entity "model_keywords" as MK #E8F5E9 {
+  * model_id : integer <<FK>>
+  * keyword : varchar
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                  ΕΚΤΕΛΕΣΗ ΜΟΝΤΕΛΩΝ                       ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "CONST_MODEL_EXEC\n_STATUSES" as MES #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  description : varchar(1000)
+}
+
+entity "CONST_MODEL_EXEC\n_ACCESSIBILITIES" as MEA #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  * description : varchar
+}
+
+entity "models_executions" as ME {
+  * id : integer <<PK>>
+  --
+  executed_at : timestamp
+  prediction_result : varchar(5000)
+  --
+  * model_id : integer <<FK>>
+  status_id : integer <<FK>>
+  dataset_id : integer <<FK>>
+  * executed_by_user_id : UUID <<FK>>
+  accessibility_id : integer <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                ΚΟΙΝΟΠΟΙΗΣΗ ΜΟΝΤΕΛΩΝ                      ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "model_shares" as MSH #FFF3E0 {
+  * id : integer <<PK>>
+  --
+  * shared_at : timestamp
+  comment : varchar
+  --
+  * model_id : integer <<FK>>
+  * shared_with_user_id : UUID <<FK>>
+  * shared_by_user_id : UUID <<FK>>
+  ..
+  <<unique>> (model_id, shared_with_user_id)
+}
+
+entity "model_group_shares" as MGS #FFF3E0 {
+  * id : integer <<PK>>
+  --
+  * shared_at : timestamp
+  comment : varchar
+  --
+  * model_id : integer <<FK>>
+  * group_id : integer <<FK>>
+  * shared_by_user_id : UUID <<FK>>
+  ..
+  <<unique>> (model_id, group_id)
+}
+
+entity "CONST_MODEL_SHARE\n_ACTION_TYPES" as MSAT #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum)
+  * description : varchar
+}
+
+entity "model_share_history" as MSHIST #F3E5F5 {
+  * id : bigint <<PK>>
+  --
+  * action_time : timestamp
+  comment : varchar
+  --
+  * model_id : integer <<FK>>
+  shared_with_user_id : UUID <<FK>>
+  * action_performed_by : UUID <<FK>>
+  * action : integer <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║              ΑΝΤΙΓΡΑΦΗ PIPELINE                          ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "pipeline_copies" as PC {
+  * id : integer <<PK>>
+  --
+  * copy_date : timestamp
+  * status : varchar (enum)
+  error_message : text
+  --
+  * source_training_id : integer <<FK>>
+  target_training_id : integer <<FK>>
+  * copied_by_user_id : UUID <<FK>>
+  * copy_for_user_id : UUID <<FK>>
+}
+
+entity "pipeline_copy_mappings" as PCM {
+  * id : integer <<PK>>
+  --
+  * entity_type : varchar (enum)
+  * source_entity_id : integer
+  target_entity_id : integer
+  minio_source_key : varchar(500)
+  minio_target_key : varchar(500)
+  * status : varchar (enum)
+  error_message : text
+  --
+  * pipeline_copy_id : integer <<FK>>
+}
+
+entity "CONST_PIPELINE_COPY\n_ACTION_TYPES" as PCAT #E8F4FD {
+  * id : integer <<PK>>
+  --
+  * name : varchar (enum) <<unique>>
+  * description : varchar
+}
+
+entity "pipeline_copy_history" as PCH #F3E5F5 {
+  * id : bigint <<PK>>
+  --
+  * action_at : timestamp
+  details : text
+  --
+  * pipeline_copy_id : integer <<FK>>
+  * action_type : integer <<FK>>
+  * action_by_user_id : UUID <<FK>>
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║            ΑΣΥΓΧΡΟΝΗ ΔΙΑΧΕΙΡΙΣΗ ΕΡΓΑΣΙΩΝ                 ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+entity "async_task_status" as ATS {
+  * task_id : varchar <<PK>>
+  --
+  * task_type : varchar (enum)
+  * status : varchar (enum)
+  error_message : varchar
+  version : integer
+  started_at : timestamp
+  finished_at : timestamp
+  username : varchar
+  model_id : integer
+  training_id : integer
+  execution_id : integer
+  * stop_requested : boolean
+  job_name : varchar
+}
+
+' ╔═══════════════════════════════════════════════════════════╗
+' ║                        ΣΧΕΣΕΙΣ                           ║
+' ║                                                          ║
+' ║  Σημείωση: Κάθε σχέση χρησιμοποιεί ξεχωριστή            ║
+' ║  κατεύθυνση (-u-/-d-/-l-/-r-) ώστε οι γραμμές           ║
+' ║  να μην ευθυγραμμίζονται μεταξύ τους.                    ║
+' ║                                                          ║
+' ║  Οι FK πεδίων τύπου "action_by", "shared_by",           ║
+' ║  "edited_by" κ.λπ. αναφέρονται στον πίνακα users        ║
+' ║  αλλά δεν σχεδιάζονται ως γραμμές για λόγους            ║
+' ║  αναγνωσιμότητας (σημειώνονται ως <<FK>> στον πίνακα).  ║
+' ╚═══════════════════════════════════════════════════════════╝
+
+' ====================== ΧΡΗΣΤΕΣ ======================
+
+UST ||-r-o{ U : status_id
+
+U ||-d-o{ UR
+R ||-d-o{ UR
+
+U ||-l-o{ JWT : user_id
+
+U ||-l-|| PRT : user_id
+
+' ====================== ΟΜΑΔΕΣ ======================
+
+U ||-r-o{ G : leader_id
+
+U }o-d-o{ GM
+G ||-d-o{ GM
+
+' ====================== ΚΑΤΗΓΟΡΙΕΣ ======================
+
+CAT ||-d-o{ CH : parent
+CAT ||-d-o{ CH : child
+
+U ||-d-o{ CAT : created_by
+
+CRS ||-r-o{ CR : status_id
+
+U ||-d-o{ CR : requested_by
+
+CAT |o-d-o{ CR : approved_category_id
+
+CR ||-d-o{ CRP
+CAT ||-d-o{ CRP
+
+CAT ||-d-o{ CHIST : category_id
+
+' ====================== ΑΛΓΟΡΙΘΜΟΙ (WEKA) ======================
+
+AT ||-d-o{ ALG : type_id
+
+ALG ||-d-o{ AC : algorithm_id
+
+AT |o-d-o{ AC : algorithm_type_id
+
+U ||-d-o{ AC : user_id
+
+' ====================== ΑΛΓΟΡΙΘΜΟΙ (CUSTOM) ======================
+
+U ||-d-o{ CA : owner_id
+
+CAA |o-r-o{ CA : accessibility_id
+
+CA ||-d-o{ CAK
+
+CA ||-d-o{ CAI : custom_algorithm_id
+
+CA ||-d-o{ CAC : algorithm_id
+U ||-d-o{ CAC : user_id
+
+CA |o-d-o{ AP : algorithm_id
+CAC |o-d-o{ AP : configuration_id
+
+' ====================== ΣΥΝΟΛΑ ΔΕΔΟΜΕΝΩΝ ======================
+
+DA ||-r-o{ DS : accessibility_id
+
+U ||-d-o{ DS : user_id
+
+CAT ||-d-o{ DS : category_id
+
+DS ||-d-o{ DC : dataset_id
+
+' ====================== ΚΟΙΝΟΠΟΙΗΣΗ DATASETS ======================
+
+DS ||-d-o{ DSH : dataset_id
+U ||-d-o{ DSH : shared_with
+
+DS ||-d-o{ DGS : dataset_id
+G ||-d-o{ DGS : group_id
+
+DS ||-d-o{ DCP : original_dataset_id
+
+DS ||-d-o{ DSHIST : dataset_id
+DSAT ||-l-o{ DSHIST : action_type
+
+' ====================== ΕΚΠΑΙΔΕΥΣΗ ======================
+
+TS ||-r-o{ T : status_id
+
+AC |o-d-o{ T : alg_config_id
+
+CAC |o-d-o{ T : custom_alg_config_id
+
+U ||-d-o{ T : user_id
+
+DC ||-d-o{ T : dataset_id
+
+T |o-r-o{ T : retrained_from
+
+' ====================== ΜΟΝΤΕΛΑ ======================
+
+T ||-d-o| M : training_id
+
+MT ||-r-o{ M : model_type_id
+
+MS ||-r-o{ M : status_id
+
+MA |o-l-o{ M : accessibility_id
+
+CAT ||-d-o{ M : category_id
+
+M ||-d-o{ MK
+
+' ====================== ΕΚΤΕΛΕΣΗ ΜΟΝΤΕΛΩΝ ======================
+
+M ||-d-o{ ME : model_id
+
+MES ||-r-o{ ME : status_id
+
+MEA ||-r-o{ ME : accessibility_id
+
+DS |o-d-o{ ME : dataset_id
+
+U ||-d-o{ ME : executed_by
+
+' ====================== ΚΟΙΝΟΠΟΙΗΣΗ ΜΟΝΤΕΛΩΝ ======================
+
+M ||-d-o{ MSH : model_id
+U ||-d-o{ MSH : shared_with
+
+M ||-d-o{ MGS : model_id
+G ||-d-o{ MGS : group_id
+
+M ||-d-o{ MSHIST : model_id
+MSAT ||-l-o{ MSHIST : action
+
+' ====================== PIPELINE ======================
+
+T ||-d-o{ PC : source_training_id
+
+T |o-d-o{ PC : target_training_id
+
+PC ||-d-o{ PCM : pipeline_copy_id
+
+PC ||-d-o{ PCH : pipeline_copy_id
+PCAT ||-l-o{ PCH : action_type
+
+' ====================== ΥΠΟΜΝΗΜΑ ======================
+
+legend left
+  |= Χρώμα |= Τύπος Πίνακα |
+  | <#FFFFFF> | Κύριος πίνακας |
+  | <#E8F4FD> | Πίνακας σταθερών τιμών (CONST) |
+  | <#FFF3E0> | Πίνακας κοινοποίησης (Share) |
+  | <#F3E5F5> | Πίνακας ιστορικού (History) |
+  | <#E8F5E9> | Πίνακας σύνδεσης (Join) |
+  ||
+  * = NOT NULL
+  FK πεδία τύπου "shared_by",
+  "action_by", "edited_by" κ.λπ.
+  αναφέρονται στον πίνακα **users**
+  (δεν σχεδιάζονται γραμμές για
+  λόγους αναγνωσιμότητας).
+end legend
+
+@enduml

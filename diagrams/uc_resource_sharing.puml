@@ -1,0 +1,145 @@
+@startuml UC_Resource_Sharing
+' ============================================================
+' Use Case Diagram: Διαμοιρασμός Πόρων (Resource Sharing)
+' Cloud-native ML Platform (MLaaS) - Thesis
+' ============================================================
+
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #444444
+  FontSize 12
+}
+skinparam arrow {
+  Color #444444
+}
+skinparam actor {
+  FontSize 13
+  BorderColor #444444
+}
+skinparam package {
+  FontSize 14
+  BorderColor #444444
+  BackgroundColor #F9F9F9
+}
+skinparam note {
+  BackgroundColor #F5F5F5
+  BorderColor #888888
+  FontSize 10
+}
+
+' ==================== ACTORS ====================
+
+actor "Αυθεντικοποιημένος\nΧρήστης" as User
+actor "Αρχηγός Ομάδας" as Leader
+actor "Διαχειριστής" as Admin
+Leader -u-|> User
+Admin -u-|> User
+
+' ==================== SYSTEM BOUNDARY ====================
+
+rectangle "Διαμοιρασμός Πόρων" {
+
+  ' ========== Διαχείριση Ομάδων ==========
+  usecase "UC1: Δημιουργία ομάδας" as UC1
+  usecase "UC2: Προσθήκη μελών\nσε ομάδα" as UC2
+  usecase "UC3: Αφαίρεση μελών\nαπό ομάδα" as UC3
+  usecase "UC4: Διαγραφή ομάδας" as UC4
+  usecase "UC5: Προβολή ομάδων" as UC5
+
+  ' ========== Κοινοποίηση Συνόλων Δεδομένων ==========
+  usecase "UC6: Κοινοποίηση συνόλου\nδεδομένων σε χρήστη" as UC6
+  usecase "UC7: Κοινοποίηση συνόλου\nδεδομένων σε ομάδα" as UC7
+  usecase "UC8: Ανάκληση κοινοποίησης\nσυνόλου δεδομένων" as UC8
+  usecase "UC9: Απόρριψη κοινοποίησης\nσυνόλου δεδομένων" as UC9
+  usecase "UC10: Αντιγραφή κοινόχρηστου\nσυνόλου δεδομένων" as UC10
+
+  ' ========== Κοινοποίηση Μοντέλων ==========
+  usecase "UC11: Κοινοποίηση\nμοντέλου σε χρήστη" as UC11
+  usecase "UC12: Κοινοποίηση\nμοντέλου σε ομάδα" as UC12
+  usecase "UC13: Ανάκληση κοινοποίησης\nμοντέλου" as UC13
+
+  ' ========== Αντιγραφή Pipeline ==========
+  usecase "UC14: Αντιγραφή pipeline\nσε χρήστη" as UC14
+  usecase "UC15: Αντιγραφή pipeline\nσε ομάδα" as UC15
+
+  ' ==================== RELATIONSHIPS ====================
+
+  ' --- Actor → Use Case ---
+  User -- UC1
+  User -- UC5
+  User -- UC6
+  User -- UC9
+  User -- UC10
+  User -- UC11
+  User -- UC14
+
+  Leader -- UC2
+  Leader -- UC3
+  Leader -- UC4
+  Leader -- UC7
+  Leader -- UC8
+  Leader -- UC12
+  Leader -- UC13
+  Leader -- UC15
+
+  Admin -- UC2
+  Admin -- UC3
+  Admin -- UC4
+  Admin -- UC7 : Ως\nδιαχειριστής
+  Admin -- UC8
+  Admin -- UC13
+
+}
+
+' ==================== NOTES ====================
+
+note right of UC1
+  Ο δημιουργός γίνεται
+  αυτόματα αρχηγός.
+  Το όνομα ομάδας
+  πρέπει να είναι μοναδικό.
+end note
+
+note right of UC6
+  **Κοινοποιήσιμοι πόροι:**
+  Σύνολα δεδομένων & Μοντέλα
+  **Περιορισμός:**
+  Μοναδικότητα ανά ζεύγος
+  (πόρος, παραλήπτης)
+end note
+
+note right of UC9
+  Ο παραλήπτης δύναται
+  να απορρίψει μια
+  κοινοποίηση που έλαβε
+end note
+
+note right of UC10
+  Δημιουργεί νέα εγγραφή
+  με τον χρήστη ως ιδιοκτήτη.
+  Αποτρέπεται η διπλή
+  αντιγραφή του ίδιου πόρου.
+end note
+
+note right of UC12
+  **Περιορισμός:**
+  Μόνο ο ιδιοκτήτης
+  του μοντέλου δύναται
+  να κοινοποιήσει σε ομάδα
+end note
+
+note bottom of UC14
+  **Βαθιά αντιγραφή:**
+  Dataset, DatasetConfig,
+  AlgorithmConfig, Training,
+  Model + αρχεία αποθηκευτικού
+  χώρου (μοντέλο, μετρικές, labels).
+  Σε αποτυχία: αντιστροφή
+  ενεργειών (rollback).
+end note
+
+@enduml

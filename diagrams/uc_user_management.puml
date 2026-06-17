@@ -1,0 +1,116 @@
+@startuml UC_User_Management
+' ============================================================
+' Use Case Diagram: Διαχείριση Χρηστών (User Management)
+' Cloud-native ML Platform (MLaaS) - Thesis
+' ============================================================
+
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #444444
+  FontSize 11
+}
+skinparam arrow {
+  Color #444444
+}
+skinparam actor {
+  FontSize 12
+  BorderColor #444444
+}
+skinparam package {
+  FontSize 13
+  BorderColor #444444
+  BackgroundColor #F9F9F9
+}
+skinparam note {
+  BackgroundColor #F5F5F5
+  BorderColor #888888
+  FontSize 9
+}
+
+' ==================== ACTORS ====================
+
+actor "Μη αυθεντικοποιημένος\nΧρήστης" as Anon
+actor "Αυθεντικοποιημένος\nΧρήστης" as User
+actor "Διαχειριστής" as Admin
+User -u-|> Anon
+Admin -u-|> User
+
+' ==================== SYSTEM BOUNDARY ====================
+
+rectangle "Διαχείριση Χρηστών" {
+
+  ' ========== Αυθεντικοποίηση ==========
+  usecase "UC1: Εγγραφή" as UC1
+  usecase "UC2: Σύνδεση" as UC2
+  usecase "UC3: Αποσύνδεση" as UC3
+  usecase "UC4: Αλλαγή κωδικού πρόσβασης" as UC4
+  usecase "UC5: Αίτημα επαναφοράς κωδικού" as UC5
+  usecase "UC6: Επαναφορά κωδικού με token" as UC6
+
+  ' ========== Διαχείριση Προφίλ ==========
+  usecase "UC7: Προβολή προφίλ" as UC7
+  usecase "UC8: Ενημέρωση προφίλ" as UC8
+  usecase "UC9: Διαγραφή λογαριασμού" as UC9
+
+  ' ========== Λειτουργίες Διαχειριστή ==========
+  usecase "UC10: Προβολή όλων των χρηστών" as UC10
+  usecase "UC11: Ενημέρωση προφίλ χρήστη" as UC11
+  usecase "UC12: Διαγραφή λογαριασμού χρήστη" as UC12
+
+  ' --- Actor → Use Case ---
+  Anon -- UC1
+  Anon -- UC2
+  Anon -- UC5
+  Anon -- UC6
+
+  User -- UC3
+  User -- UC4
+  User -- UC7
+  User -- UC8
+  User -- UC9
+
+  Admin -- UC10
+  Admin -- UC11
+  Admin -- UC12
+
+}
+
+' ==================== NOTES ====================
+
+note right of UC1
+  **Επικύρωση:** email, username
+  (μοναδικά), κωδικός 8+ χαρ.
+  (κεφαλαίο, πεζό, ψηφίο,
+  ειδικός χαρ.), ηλικία >= 13.
+  Κατακερματισμός κωδικού
+  με Argon2id.
+end note
+
+note right of UC2
+  Επιτυχής σύνδεση εκδίδει
+  JWT token (RSA signed).
+end note
+
+note right of UC5
+  Token UUID, λήξη 1 ώρα.
+  Ακυρώνει προηγούμενο token
+  αν υπάρχει. Αποστέλλεται
+  email επαναφοράς στον χρήστη.
+end note
+
+note bottom of UC9
+  Απαιτεί αιτιολόγηση.
+  Ανακαλεί όλα τα JWT,
+  διαγράφει tokens και ρόλους.
+end note
+
+note bottom of UC3
+  Ανάκληση ενεργών JWT tokens
+  του χρήστη.
+end note
+
+@enduml

@@ -1,0 +1,74 @@
+@startuml Seq_Dataset_Upload
+' ============================================================
+' Διάγραμμα Ακολουθίας: Μεταφόρτωση Συνόλου Δεδομένων
+' Cloud-native ML Platform (MLaaS) - Thesis
+' ============================================================
+
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam sequenceArrowFontSize 11
+skinparam noteFontSize 10
+skinparam participantFontStyle bold
+
+' ==================== ΣΥΜΜΕΤΕΧΟΝΤΕΣ ====================
+
+actor "Χρήστης" as User
+participant "Frontend\n(SPA)" as FE
+participant "DatasetController" as Ctrl
+participant "DatasetService" as Svc
+participant "MinioService" as MinIO
+database "PostgreSQL" as DB
+
+' ==================== ΡΟΗ ====================
+
+User -> FE : Πλοήγηση στη σελίδα Datasets
+activate FE
+
+User -> FE : Επιλογή αρχείου &\nσυμπλήρωση μεταδεδομένων\n(περιγραφή, προσβασιμότητα, τύπος)
+
+FE -> Ctrl : POST /api/datasets/upload\n[multipart/form-data + JWT]
+activate Ctrl
+
+note right of Ctrl
+  Εξαγωγή χρήστη
+  από το JWT token
+end note
+
+Ctrl -> Svc : uploadDataset(file, user, type)
+activate Svc
+
+Svc -> Svc : Επικύρωση ονόματος αρχείου
+Svc -> Svc : Δημιουργία μοναδικού\nονόματος αντικειμένου
+
+alt Τύπος = TRAIN
+  Svc -> Svc : Επιλογή bucket: datasets
+else Τύπος = PREDICT
+  Svc -> Svc : Επιλογή bucket: predictions
+end
+
+Svc -> MinIO : uploadObjectToBucket\n(file, bucket, objectName)
+activate MinIO
+MinIO --> Svc : OK
+deactivate MinIO
+
+Svc -> Svc : Δημιουργία οντότητας Dataset\n(μεταδεδομένα, κατηγορία,\nπροσβασιμότητα)
+
+Svc -> DB : save(Dataset)
+activate DB
+DB --> Svc : Dataset (με id)
+deactivate DB
+
+Svc --> Ctrl : GenericResponse<Dataset>
+deactivate Svc
+
+Ctrl --> FE : 200 OK + Dataset JSON
+deactivate Ctrl
+
+FE --> User : Εμφάνιση επιτυχούς\nμεταφόρτωσης
+deactivate FE
+
+@enduml

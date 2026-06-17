@@ -1,0 +1,434 @@
+{
+	"info": {
+		"_postman_id": "byoc-any-language-test",
+		"name": "BYOC Any Language - Test Collection",
+		"description": "Tests the BYOC (Bring Your Own Container) feature that allows ML algorithms in any programming language.\n\nPrerequisites:\n- Backend running (kubectl port-forward -n thesisapp svc/backend 8080:8080)\n- byoc-bash-demo:1.0 image loaded in minikube\n\nRun requests in order (1-7).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "algorithm_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "training_task_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "model_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "prediction_task_id",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Login",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const res = pm.response.json();",
+							"if (res.dataHeader && res.dataHeader.token) {",
+							"    pm.collectionVariables.set('token', res.dataHeader.token);",
+							"    console.log('Token saved successfully');",
+							"    pm.test('Login successful', function () {",
+							"        pm.expect(res.message).to.eql('Authentication successful');",
+							"    });",
+							"} else {",
+							"    pm.test('Login failed', function () {",
+							"        pm.expect.fail('No token in response: ' + JSON.stringify(res));",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"nickriz\",\n    \"password\": \"userPassword\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/auth/login",
+					"host": ["{{base_url}}"],
+					"path": ["api", "auth", "login"]
+				}
+			}
+		},
+		{
+			"name": "2. Create BYOC Algorithm",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const res = pm.response.json();",
+							"if (res.dataHeader) {",
+							"    pm.collectionVariables.set('algorithm_id', res.dataHeader.toString());",
+							"    console.log('Algorithm ID saved: ' + res.dataHeader);",
+							"    pm.test('Algorithm created', function () {",
+							"        pm.expect(res.message).to.eql('Algorithm created successfully');",
+							"    });",
+							"} else {",
+							"    pm.test('Algorithm creation failed', function () {",
+							"        pm.expect.fail('Error: ' + JSON.stringify(res));",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "name",
+							"value": "bash-ml-demo",
+							"type": "text"
+						},
+						{
+							"key": "version",
+							"value": "1.0",
+							"type": "text"
+						},
+						{
+							"key": "accessibility",
+							"value": "PRIVATE",
+							"type": "text"
+						},
+						{
+							"key": "keywords",
+							"value": "bash,demo,byoc",
+							"type": "text"
+						},
+						{
+							"key": "dockerHubUrl",
+							"value": "byoc-bash-demo:1.0",
+							"type": "text"
+						},
+						{
+							"key": "executionMode",
+							"value": "GENERIC_BYOC",
+							"type": "text"
+						},
+						{
+							"key": "parametersFile",
+							"description": "Select params.json file",
+							"type": "file",
+							"src": ""
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/algorithms/createCustomAlgorithm",
+					"host": ["{{base_url}}"],
+					"path": ["api", "algorithms", "createCustomAlgorithm"]
+				}
+			}
+		},
+		{
+			"name": "3. Train BYOC Algorithm",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const res = pm.response.json();",
+							"if (res.dataHeader) {",
+							"    pm.collectionVariables.set('training_task_id', res.dataHeader);",
+							"    console.log('Training Task ID saved: ' + res.dataHeader);",
+							"    pm.test('Training started', function () {",
+							"        pm.expect(pm.response.code).to.eql(202);",
+							"    });",
+							"} else {",
+							"    pm.test('Training failed to start', function () {",
+							"        pm.expect.fail('Error: ' + JSON.stringify(res));",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "algorithmId",
+							"value": "{{algorithm_id}}",
+							"type": "text"
+						},
+						{
+							"key": "targetColumn",
+							"value": "risk",
+							"type": "text"
+						},
+						{
+							"key": "basicAttributesColumns",
+							"value": "age,income,balance",
+							"type": "text"
+						},
+						{
+							"key": "datasetFile",
+							"description": "Select test_dataset.csv file",
+							"type": "file",
+							"src": ""
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/train/custom",
+					"host": ["{{base_url}}"],
+					"path": ["api", "train", "custom"]
+				}
+			}
+		},
+		{
+			"name": "4. Poll Training Status",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const res = pm.response.json();",
+							"if (res.dataHeader && res.dataHeader.status) {",
+							"    const status = res.dataHeader.status;",
+							"    console.log('Training status: ' + status);",
+							"    ",
+							"    if (status === 'COMPLETED') {",
+							"        const modelId = res.dataHeader.modelId;",
+							"        if (modelId) {",
+							"            pm.collectionVariables.set('model_id', modelId.toString());",
+							"            console.log('Model ID saved: ' + modelId);",
+							"        }",
+							"        pm.test('Training completed', function () {",
+							"            pm.expect(status).to.eql('COMPLETED');",
+							"        });",
+							"    } else if (status === 'FAILED') {",
+							"        pm.test('Training FAILED', function () {",
+							"            pm.expect.fail('Training failed: ' + JSON.stringify(res.dataHeader));",
+							"        });",
+							"    } else {",
+							"        pm.test('Training still running: ' + status, function () {",
+							"            pm.expect(['REQUESTED', 'RUNNING']).to.include(status);",
+							"        });",
+							"        console.log('Not done yet. Wait 5 seconds and send again.');",
+							"    }",
+							"} else {",
+							"    pm.test('Unexpected response', function () {",
+							"        pm.expect.fail('Error: ' + JSON.stringify(res));",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/tasks/{{training_task_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "tasks", "{{training_task_id}}"]
+				}
+			}
+		},
+		{
+			"name": "5. Finalize Model",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const res = pm.response.json();",
+							"pm.test('Model finalized', function () {",
+							"    pm.expect(res.dataHeader).to.not.be.null;",
+							"    pm.expect(res.message).to.include('finalized');",
+							"});",
+							"console.log('Model ' + res.dataHeader + ' finalized successfully');"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Bash BYOC Demo Model\",\n    \"keywords\": [\"bash\", \"demo\", \"byoc\"],\n    \"description\": \"Demo model trained with pure bash - proves language-agnostic BYOC support\",\n    \"categoryId\": 1,\n    \"isPublic\": false\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/models/finalize/{{model_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "models", "finalize", "{{model_id}}"]
+				}
+			}
+		},
+		{
+			"name": "6. Run Prediction",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const res = pm.response.json();",
+							"if (res.dataHeader) {",
+							"    pm.collectionVariables.set('prediction_task_id', res.dataHeader);",
+							"    console.log('Prediction Task ID saved: ' + res.dataHeader);",
+							"    pm.test('Prediction started', function () {",
+							"        pm.expect(pm.response.code).to.eql(202);",
+							"    });",
+							"} else {",
+							"    pm.test('Prediction failed to start', function () {",
+							"        pm.expect.fail('Error: ' + JSON.stringify(res));",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "modelId",
+							"value": "{{model_id}}",
+							"type": "text"
+						},
+						{
+							"key": "predictionFile",
+							"description": "Select test_dataset.csv (or any CSV with same columns)",
+							"type": "file",
+							"src": ""
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/model-exec/execute",
+					"host": ["{{base_url}}"],
+					"path": ["api", "model-exec", "execute"]
+				}
+			}
+		},
+		{
+			"name": "7. Poll Prediction Status",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const res = pm.response.json();",
+							"if (res.dataHeader && res.dataHeader.status) {",
+							"    const status = res.dataHeader.status;",
+							"    console.log('Prediction status: ' + status);",
+							"    ",
+							"    if (status === 'COMPLETED') {",
+							"        pm.test('Prediction completed', function () {",
+							"            pm.expect(status).to.eql('COMPLETED');",
+							"        });",
+							"        console.log('BYOC test PASSED! Full pipeline works.');",
+							"    } else if (status === 'FAILED') {",
+							"        pm.test('Prediction FAILED', function () {",
+							"            pm.expect.fail('Prediction failed: ' + JSON.stringify(res.dataHeader));",
+							"        });",
+							"    } else {",
+							"        pm.test('Prediction still running: ' + status, function () {",
+							"            pm.expect(['REQUESTED', 'RUNNING']).to.include(status);",
+							"        });",
+							"        console.log('Not done yet. Wait 5 seconds and send again.');",
+							"    }",
+							"} else {",
+							"    pm.test('Unexpected response', function () {",
+							"        pm.expect.fail('Error: ' + JSON.stringify(res));",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/tasks/{{prediction_task_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "tasks", "{{prediction_task_id}}"]
+				}
+			}
+		}
+	]
+}

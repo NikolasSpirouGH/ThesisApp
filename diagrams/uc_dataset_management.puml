@@ -1,0 +1,126 @@
+@startuml UC_Dataset_Management
+' ============================================================
+' Use Case Diagram: Διαχείριση Συνόλων Δεδομένων (Dataset Management)
+' Cloud-native ML Platform (MLaaS) - Thesis
+' ============================================================
+
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #444444
+  FontSize 12
+}
+skinparam arrow {
+  Color #444444
+}
+skinparam actor {
+  FontSize 13
+  BorderColor #444444
+}
+skinparam package {
+  FontSize 14
+  BorderColor #444444
+  BackgroundColor #F9F9F9
+}
+skinparam note {
+  BackgroundColor #F5F5F5
+  BorderColor #888888
+  FontSize 10
+}
+
+' ==================== ACTORS ====================
+
+actor "Αυθεντικοποιημένος\nΧρήστης" as User
+actor "Διαχειριστής" as Admin
+Admin -u-|> User
+
+' ==================== SYSTEM BOUNDARY ====================
+
+rectangle "Διαχείριση Συνόλων Δεδομένων" {
+
+  ' --- Core Use Cases ---
+  usecase "UC1: Μεταφόρτωση\nσυνόλου δεδομένων" as UC1
+  usecase "UC2: Προβολή\nσυνόλων δεδομένων" as UC2
+  usecase "UC3: Αναζήτηση\nσυνόλων δεδομένων" as UC3
+  usecase "UC4: Λήψη\nσυνόλου δεδομένων" as UC4
+  usecase "UC5: Διαγραφή\nσυνόλου δεδομένων" as UC5
+
+  ' --- Sharing Use Cases ---
+  usecase "UC6: Κοινοποίηση\nσε χρήστη" as UC6
+  usecase "UC7: Κοινοποίηση\nσε ομάδα" as UC7
+  usecase "UC8: Ανάκληση\nκοινοποίησης" as UC8
+  usecase "UC9: Απόρριψη\nκοινοποίησης" as UC9
+  usecase "UC10: Αντιγραφή\nκοινόχρηστου συνόλου" as UC10
+
+  ' --- Configuration Use Case ---
+  usecase "UC11: Διαμόρφωση στηλών\nγια εκπαίδευση" as UC11
+
+  ' ==================== RELATIONSHIPS ====================
+
+  ' --- Actor to Use Case ---
+  User -- UC1
+  User -- UC2
+  User -- UC3
+  User -- UC4
+  User -- UC5
+  User -- UC6
+  User -- UC7
+  User -- UC8
+  User -- UC9
+  User -- UC10
+  User -- UC11
+
+}
+
+' ==================== NOTES ====================
+
+note right of UC1
+  **Υποστηριζόμενες μορφές:**
+  CSV (.csv), ARFF (.arff),
+  Excel (.xlsx, .xls)
+  **Προεπιλεγμένη ορατότητα:** PRIVATE
+  **Μέγιστη περιγραφή:** 5000 χαρ.
+  Αν το αρχείο είναι Excel,
+  μετατρέπεται αυτόματα σε CSV.
+end note
+
+note right of UC2
+  **Κανονικός χρήστης:**
+  Ιδιόκτητα + δημόσια
+  **Διαχειριστής:**
+  Όλα τα σύνολα
+end note
+
+note right of UC3
+  **Φίλτρα:** Όνομα, ιδιοκτήτης,
+  κατηγορία, τύπος, ημερομηνία,
+  δημόσιο/ιδιωτικό
+  **Σελιδοποίηση:** Υποστηρίζεται
+end note
+
+note right of UC5
+  **Κανονικός χρήστης:**
+  Μόνο ιδιόκτητα σύνολα
+  **Διαχειριστής:**
+  Οποιοδήποτε σύνολο
+end note
+
+note bottom of UC6
+  **Περιορισμός:**
+  Μόνο ιδιοκτήτης ή
+  διαχειριστής δύναται
+  να κοινοποιήσει
+end note
+
+note bottom of UC10
+  **Σημείωση:** Η αντιγραφή
+  δημιουργεί νέα εγγραφή
+  στη βάση με αναφορά
+  στο ίδιο αρχείο στον
+  αποθηκευτικό χώρο
+end note
+
+@enduml

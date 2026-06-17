@@ -1,0 +1,156 @@
+@startuml UC_Algorithm_Management
+' ============================================================
+' Use Case Diagram: Διαχείριση Αλγορίθμων (Algorithm Management)
+' Cloud-native ML Platform (MLaaS) - Thesis
+' ============================================================
+
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #444444
+  FontSize 12
+}
+skinparam arrow {
+  Color #444444
+}
+skinparam actor {
+  FontSize 13
+  BorderColor #444444
+}
+skinparam package {
+  FontSize 14
+  BorderColor #444444
+  BackgroundColor #F9F9F9
+}
+skinparam note {
+  BackgroundColor #F5F5F5
+  BorderColor #888888
+  FontSize 10
+}
+
+' ==================== ACTORS ====================
+
+
+actor "Αυθεντικοποιημένος\nΧρήστης" as User
+actor "Διαχειριστής" as Admin
+actor "Μητρώο\nΕικόνων" as Registry <<Σύστημα>>
+
+Admin -u-|> User
+
+' ==================== SYSTEM BOUNDARY ====================
+
+rectangle "Διαχείριση Αλγορίθμων" {
+
+  ' ========== Προκαθορισμένοι Αλγόριθμοι (Weka) ==========
+  usecase "UC1: Προβολή προκαθορισμένων\nαλγορίθμων" as UC1
+  usecase "UC2: Προβολή επιλογών\nκαι προεπιλογών αλγορίθμου" as UC2
+  usecase "UC3: Αναζήτηση προκαθορισμένων\nαλγορίθμων" as UC3
+  usecase "UC4: Δημιουργία προκαθορισμένου\nαλγορίθμου" as UC4
+  usecase "UC5: Ενημέρωση προκαθορισμένου\nαλγορίθμου" as UC5
+  usecase "UC6: Διαγραφή προκαθορισμένου\nαλγορίθμου" as UC6
+
+  ' ========== Προσαρμοσμένοι Αλγόριθμοι (Custom) ==========
+  usecase "UC7: Δημιουργία προσαρμοσμένου\nαλγορίθμου" as UC7
+  usecase "UC8: Προβολή προσαρμοσμένων\nαλγορίθμων" as UC8
+  usecase "UC9: Αναζήτηση προσαρμοσμένων\nαλγορίθμων" as UC9
+  usecase "UC10: Ενημέρωση προσαρμοσμένου\nαλγορίθμου" as UC10
+  usecase "UC11: Διαγραφή προσαρμοσμένου\nαλγορίθμου" as UC11
+
+  ' ========== Διαμόρφωση ==========
+  usecase "UC12: Διαμόρφωση\nυπερπαραμέτρων" as UC12
+
+  ' ========== Extend ==========
+  usecase "Μεταφόρτωση αρχείου\nDocker image" as TAR_UP
+
+  ' ==================== RELATIONSHIPS ====================
+
+  ' --- Αυθεντικοποιημένος → Αλγόριθμοι ---
+  User -- UC3
+  User -- UC7
+  User -- UC8
+  User -- UC9
+  User -- UC10
+  User -- UC11
+  User -- UC12
+
+  ' --- Διαχειριστής → Weka CRUD ---
+  Admin -- UC4
+  Admin -- UC5
+  Admin -- UC6
+
+  ' --- External Systems ---
+  UC7 -- Registry
+
+  ' --- Extend ---
+  TAR_UP ..> UC7 : <<extend>>\n[παροχή αρχείου TAR]
+}
+
+' ==================== NOTES ====================
+
+note right of UC1
+  **Δημόσια πρόσβαση**
+  Δεν απαιτείται αυθεντικοποίηση.
+  Επιστρέφει: id, όνομα, τύπος
+  (Classification, Clustering,
+  Regression)
+end note
+
+note right of UC7
+  **Απαιτούμενα:**
+  Όνομα, έκδοση, ορατότητα,
+  λέξεις-κλειδιά, αρχείο
+  παραμέτρων (JSON),
+  Docker image (TAR ή URL)
+  **Λειτουργία εκτέλεσης:**
+  PYTHON_TEMPLATE ή
+  GENERIC_BYOC
+end note
+
+note right of UC8
+  **Κανονικός χρήστης:**
+  Ιδιόκτητοι + δημόσιοι
+  **Διαχειριστής:**
+  Όλοι οι αλγόριθμοι
+end note
+
+note right of UC9
+  **Φίλτρα:** Όνομα, περιγραφή,
+  λέξεις-κλειδιά, ημερομηνία
+  **Λειτουργία:** AND ή OR
+end note
+
+note right of UC10
+  **Περιορισμός:**
+  Μόνο ο ιδιοκτήτης ή
+  ο διαχειριστής δύναται
+  να ενημερώσει αλγόριθμο
+end note
+
+note right of UC11
+  **Περιορισμός:**
+  Μόνο ο ιδιοκτήτης ή
+  ο διαχειριστής δύναται
+  να διαγράψει αλγόριθμο
+end note
+
+note bottom of UC12
+  **Weka:** Επιλογές CLI
+  (π.χ. -C 0.25 -M 2).
+  Ανάλυση Weka CLI string
+  σε δομημένες επιλογές.
+  **Custom:** Αρχείο JSON
+  παραμέτρων (name, type,
+  value, range)
+end note
+
+note bottom of TAR_UP
+  Αποκλειστικά με
+  DockerHub URL —
+  απαιτείται ακριβώς
+  μία από τις δύο πηγές
+end note
+
+@enduml

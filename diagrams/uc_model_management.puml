@@ -1,0 +1,131 @@
+@startuml UC_Model_Management
+' ============================================================
+' Use Case Diagram: Διαχείριση Μοντέλων (Model Management)
+' Cloud-native ML Platform (MLaaS) - Thesis
+' ============================================================
+
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #444444
+  FontSize 11
+}
+skinparam arrow {
+  Color #444444
+}
+skinparam actor {
+  FontSize 12
+  BorderColor #444444
+}
+skinparam package {
+  FontSize 13
+  BorderColor #444444
+  BackgroundColor #F9F9F9
+}
+skinparam note {
+  BackgroundColor #F5F5F5
+  BorderColor #888888
+  FontSize 9
+}
+
+' ==================== ACTORS ====================
+
+actor "Αυθεντικοποιημένος\nΧρήστης" as User
+actor "Διαχειριστής" as Admin
+actor "Μητρώο\nΕικόνων" as Registry <<Σύστημα>>
+
+Admin -u-|> User
+
+' ==================== SYSTEM BOUNDARY ====================
+
+rectangle "Διαχείριση Μοντέλων" {
+
+  usecase "UC1: Οριστικοποίηση μοντέλου" as UC1
+  usecase "UC2: Ενημέρωση μεταδεδομένων" as UC2
+  usecase "UC3: Αντικατάσταση εκπαίδευσης" as UC3
+  usecase "UC4: Διαγραφή μοντέλου" as UC4
+  usecase "UC5: Προβολή μοντέλων" as UC5
+  usecase "UC6: Αναζήτηση μοντέλων" as UC6
+  usecase "UC7: Λήψη αρχείου μοντέλου" as UC7
+  usecase "UC8: Προβολή μετρικών αξιολόγησης" as UC8
+  usecase "UC9: Οπτικοποίηση μετρικών" as UC9
+  usecase "UC10: Εκτέλεση πρόβλεψης" as UC10
+  usecase "UC11: Λήψη αποτελεσμάτων πρόβλεψης" as UC11
+  usecase "UC12: Αναζήτηση εκτελέσεων" as UC12
+  usecase "UC13: Διαγραφή εκτέλεσης" as UC13
+  usecase "UC14: Κοινοποίηση μοντέλου" as UC14
+  usecase "UC15: Ανάκληση κοινοποίησης" as UC15
+
+  ' --- Actor → Use Case ---
+  User -- UC1
+  User -- UC2
+  User -- UC3
+  User -- UC4
+  User -- UC5
+  User -- UC6
+  User -- UC7
+  User -- UC8
+  User -- UC9
+  User -- UC10
+  User -- UC11
+  User -- UC12
+  User -- UC13
+  User -- UC14
+  User -- UC15
+
+  ' --- External Systems ---
+  UC10 -- Registry
+}
+
+' ==================== NOTES ====================
+
+note bottom of UC1
+  Εκπαίδευση=COMPLETED, μοντέλο=FINISHED.
+  Ορίζονται: όνομα, περιγραφή, κατηγορία,
+  ορατότητα (PUBLIC/PRIVATE), λέξεις-κλειδιά.
+  **Περιορισμός:** Μόνο ο ιδιοκτήτης.
+end note
+
+note right of UC5
+  **Κανονικός χρήστης:**
+  Ιδιόκτητα + δημόσια
+  **Διαχειριστής:**
+  Όλα τα μοντέλα
+end note
+
+note bottom of UC9
+  Ταξινόμηση: bar (Accuracy/Precision/Recall/F1) + Confusion Matrix
+  Παλινδρόμηση: Actual vs Predicted + Residuals scatter
+  Ομαδοποίηση: Cluster Sizes bar + PCA 2D scatter
+end note
+
+note bottom of UC10
+  Ασύγχρονη εκτέλεση: επιστρέφει taskId,
+  ο χρήστης ελέγχει μέσω polling.
+  Απαιτεί οριστικοποιημένο μοντέλο.
+end note
+
+note right of UC2
+  **Περιορισμός:** Μόνο ο ιδιοκτήτης
+  ή ο διαχειριστής δύναται
+  να ενημερώσει μεταδεδομένα
+end note
+
+note right of UC4
+  **Περιορισμός:** Μόνο ο ιδιοκτήτης
+  ή ο διαχειριστής δύναται
+  να διαγράψει μοντέλο
+end note
+
+note right of UC14
+  **Περιορισμός:** Μόνο ο ιδιοκτήτης
+  δύναται να κοινοποιήσει.
+  Ο διαχειριστής δύναται
+  να ανακαλέσει οποιαδήποτε
+  κοινοποίηση (UC15).
+end note
+
+@enduml

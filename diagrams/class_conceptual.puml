@@ -1,0 +1,127 @@
+@startuml Class_Conceptual_Domain_Model
+' ============================================================
+' Εννοιολογικό Διάγραμμα Κλάσεων — Domain Model
+' Cloud-native ML Platform (MLaaS) - Thesis
+'
+' Διορθώσεις βάσει σχολίων:
+' (β) Βέλη αντί > στο όνομα σχέσης
+' (δ) User-Role: M:M
+' (ζ) Μία μόνο σχέση User-Dataset
+' (στ) Ονομασία σχέσης DatasetShare-Dataset
+' (ια) Training self-ref: 0..1 → *
+' (ιβ) Αφαίρεση διπλής sharedVia
+' (ιδ) Training: 0..1 σε AlgoConfig & CustomAlgoConfig
+' (ιε) Αφαίρεση AlgorithmType ως κλάση
+' (ιστ) Σύνδεση AsyncTaskStatus & CategoryRequest
+' ============================================================
+
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam classAttributeIconSize 0
+skinparam classFontStyle bold
+skinparam ArrowFontSize 10
+
+hide members
+
+' ==================== ΚΛΑΣΕΙΣ ====================
+
+class User
+class Role
+class Group
+
+class Dataset
+class DatasetConfiguration
+class DatasetShare
+
+class Algorithm
+class AlgorithmConfiguration
+class CustomAlgorithm
+class CustomAlgorithmImage
+class AlgorithmParameter
+class CustomAlgorithmConfiguration
+
+class Training
+class Model
+class ModelExecution
+class ModelShare
+
+class Category
+class CategoryRequest
+class AsyncTaskStatus
+class PipelineCopy
+
+' ==================== ΣΧΕΣΕΙΣ ====================
+
+' --- Χρήστης & Ρόλοι ---
+User "*" -- "*" Role
+
+' --- Χρήστης & Ομάδες ---
+User "1" --> "*" Group : αρχηγός
+User "*" -- "*" Group : μέλος
+
+' --- Χρήστης → Πόροι ---
+User "1" --> "*" Dataset : κατέχει
+User "1" --> "*" Training : εκκινεί
+User "1" --> "*" CustomAlgorithm : δημιουργεί
+User "1" --> "*" ModelExecution : εκτελεί
+
+' --- Σύνολα Δεδομένων ---
+Dataset "1" *--> "*" DatasetConfiguration
+Dataset "*" ---> "1" Category : κατηγορία
+
+' --- Κοινοποίηση Dataset ---
+DatasetShare "*" --> "1" Dataset : αφορά
+DatasetShare "*" --> "1" User : παραλήπτης
+
+' --- Αλγόριθμοι Weka ---
+Algorithm "1" --> "*" AlgorithmConfiguration
+
+' --- Προσαρμοσμένοι Αλγόριθμοι ---
+CustomAlgorithm "1" *--> "*" CustomAlgorithmImage
+CustomAlgorithm "1" *--> "*" AlgorithmParameter
+CustomAlgorithm "1" --> "*" CustomAlgorithmConfiguration
+CustomAlgorithmConfiguration "1" *--> "*" AlgorithmParameter
+
+' --- Εκπαίδευση ---
+Training "*" --> "1" DatasetConfiguration : χρησιμοποιεί
+Training "*" --> "0..1" AlgorithmConfiguration
+Training "*" --> "0..1" CustomAlgorithmConfiguration
+Training "1" *--> "0..1" Model : παράγει
+Training "*" --> "0..1" Training : επανεκπαίδευση
+
+' --- Μοντέλα ---
+Model "*" ---> "1" Category : κατηγορία
+Model "1" *--> "*" ModelExecution
+
+' --- Κοινοποίηση Model ---
+ModelShare "*" --> "1" Model : αφορά
+ModelShare "*" --> "1" User : παραλήπτης
+
+' --- Κατηγορίες ---
+Category "*" --- "*" Category : ιεραρχία
+
+' --- Αίτημα Κατηγορίας ---
+CategoryRequest "*" --> "1" User : αιτών
+CategoryRequest "*" ---> "0..1" Category : εγκεκριμένη
+
+' --- Ασύγχρονες Εργασίες ---
+AsyncTaskStatus "*" --> "1" User
+AsyncTaskStatus "*" --> "0..1" Training
+AsyncTaskStatus "*" --> "0..1" ModelExecution
+
+' --- Αντιγραφή Pipeline ---
+PipelineCopy "*" --> "1" Training : πηγή
+PipelineCopy "*" --> "0..1" Training : αντίγραφο
+PipelineCopy "*" --> "1" User : εκτελεστής
+
+' ==================== LEGEND ====================
+
+legend bottom left
+  ◆── Σύνθεση (composition)
+  ──> Μονόδρομη πλοήγηση
+  ─── Αμφίδρομη συσχέτιση
+endlegend
+
+@enduml

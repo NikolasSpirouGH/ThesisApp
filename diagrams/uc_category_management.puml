@@ -1,0 +1,91 @@
+@startuml UC_Category_Management
+' ============================================================
+' Use Case Diagram: Διαχείριση Κατηγοριών (Category Management)
+' Cloud-native ML Platform (MLaaS) - Thesis
+' ============================================================
+
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+  ArrowColor #444444
+  FontSize 11
+}
+skinparam arrow {
+  Color #444444
+}
+skinparam actor {
+  FontSize 12
+  BorderColor #444444
+}
+skinparam package {
+  FontSize 13
+  BorderColor #444444
+  BackgroundColor #F9F9F9
+}
+skinparam note {
+  BackgroundColor #F5F5F5
+  BorderColor #888888
+  FontSize 9
+}
+
+' ==================== ACTORS ====================
+
+actor "Αυθεντικοποιημένος\nΧρήστης" as User
+actor "Διαχειριστής" as Admin
+
+Admin -u-|> User
+
+' ==================== SYSTEM BOUNDARY ====================
+
+rectangle "Διαχείριση Κατηγοριών" {
+
+  usecase "UC1: Προβολή κατηγοριών" as UC1
+  usecase "UC2: Προβολή κατηγορίας ανά ID" as UC2
+  usecase "UC3: Υποβολή αιτήματος\nδημιουργίας κατηγορίας" as UC3
+  usecase "UC4: Έγκριση αιτήματος" as UC4
+  usecase "UC5: Απόρριψη αιτήματος" as UC5
+  usecase "UC6: Προβολή εκκρεμών αιτημάτων" as UC6
+  usecase "UC7: Ενημέρωση κατηγορίας" as UC7
+  usecase "UC8: Διαγραφή κατηγορίας" as UC8
+
+  ' --- Actor → Use Case ---
+  User -- UC1
+  User -- UC2
+  User -- UC3
+
+  Admin -- UC4
+  Admin -- UC5
+  Admin -- UC6
+  Admin -- UC7
+  Admin -- UC8
+}
+
+' ==================== NOTES ====================
+
+note right of UC3
+  **Ροή έγκρισης:** Δημιουργείται
+  αίτημα (PENDING) που εξετάζεται
+  από τον διαχειριστή.
+  **Ιεραρχία:** Προαιρετικοί γονείς
+  (DAG, πολλαπλοί γονείς).
+  Ελέγχεται μοναδικότητα ονόματος.
+end note
+
+note right of UC8
+  **Ήπια διαγραφή** (soft delete).
+  Αν υπάρχουν μοντέλα/datasets,
+  ανακατανέμονται στον πλησιέστερο
+  γονέα. Αποκλείεται αν δεν
+  υπάρχει γονέας.
+end note
+
+note right of UC7
+  Αποθηκεύεται JSON snapshot
+  πριν/μετά κάθε ενημέρωση
+  (ιστορικό αλλαγών)
+end note
+
+@enduml
